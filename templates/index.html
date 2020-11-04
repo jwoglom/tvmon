@@ -12,12 +12,10 @@ video {
     flex: 1;
     width: 50%;
     height: 50%;
+    cursor: pointer;
 }
 video.muted {
     opacity: 0.75;
-}
-[draggable] {
-    cursor: move;
 }
     </style>
     <script src="https://hls-js.netlify.app/dist/hls.js"></script>
@@ -25,7 +23,6 @@ video.muted {
 
 function render(r) {
     var v = document.createElement('video');
-    v.setAttribute('draggable', true);
     v.id = Object.keys(r)[0];
     document.body.appendChild(v);
     var url = Object.values(r)[0];
@@ -53,13 +50,21 @@ function play(el, url) {
     }
     el.classList.add('muted');
     el.onclick = function() {
-        if (el.muted) {
-            el.muted = false;
-            el.classList.remove('muted');
-        } else {
-            el.muted = true;
-            el.classList.add('muted');
-        }
+        document.querySelectorAll("video").forEach(function(el2) {
+            if (el == el2) {
+                el2.muted = false;
+                el2.classList.remove('muted');
+            } else {
+                el2.muted = true;
+                el2.classList.add('muted');
+            }
+        });
+    }
+    el.ondblclick = function() {
+        el.src = 'about:blank';
+        setTimeout(function() {
+            el.src = url
+        }, 1000);
     }
 }
 
