@@ -51,7 +51,7 @@ function play(el, url) {
     el.classList.add('muted');
     el.onclick = function() {
         document.querySelectorAll("video").forEach(function(el2) {
-            if (el == el2) {
+            if (el == el2 && el2.muted) {
                 el2.muted = false;
                 el2.classList.remove('muted');
             } else {
@@ -61,10 +61,6 @@ function play(el, url) {
         });
     }
     el.ondblclick = function() {
-        el.src = 'about:blank';
-        setTimeout(function() {
-            el.src = url
-        }, 1000);
     }
 }
 
