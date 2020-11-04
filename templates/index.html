@@ -17,6 +17,14 @@ video {
 video.muted {
     opacity: 0.75;
 }
+video.expanded {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 10;
+}
     </style>
     <script src="https://hls-js.netlify.app/dist/hls.js"></script>
     <script type="text/javascript">
@@ -61,6 +69,15 @@ function play(el, url) {
         });
     }
     el.ondblclick = function() {
+        document.querySelectorAll("video").forEach(function(el2) {
+            if (el == el2 && !el2.classList.contains('expanded')) {
+                el2.classList.add('expanded');
+                el2.muted = false;
+                el2.classList.remove('muted');
+            } else {
+                el2.classList.remove('expanded');
+            }
+        });
     }
 }
 
@@ -72,6 +89,7 @@ function prep(i, r) {
     loaded++;
     console.log('prep', i, r, data);
     if (loaded == views.length) {
+        document.querySelector(".loading-div").remove();
         for (var i=0; i<loaded; i++) {
             render(data[i]);
         }
@@ -93,6 +111,6 @@ window.onload = function() {
     </script>
 </head>
 <body>
-    
+    <div class="loading-div"><center><h1>Loading streams...</h1></center></div>
 </body>
 </html>
