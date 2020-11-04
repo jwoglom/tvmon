@@ -1,0 +1,97 @@
+<!doctype html>
+<html>
+<head>
+    <title>Tvmon</title>
+    <style>
+body {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+}
+video {
+    flex: 1;
+    width: 50%;
+    height: 50%;
+}
+video.muted {
+    opacity: 0.75;
+}
+[draggable] {
+    cursor: move;
+}
+    </style>
+    <script src="https://hls-js.netlify.app/dist/hls.js"></script>
+    <script type="text/javascript">
+
+function render(r) {
+    var v = document.createElement('video');
+    v.setAttribute('draggable', true);
+    v.id = Object.keys(r)[0];
+    document.body.appendChild(v);
+    var url = Object.values(r)[0];
+    play(v, url);
+}
+
+function play(el, url) {
+    if(Hls.isSupported()) {
+        var video = el;
+        var hls = new Hls({
+            debug: true
+        });
+        hls.loadSource(url);
+        hls.attachMedia(video);
+        hls.on(Hls.Events.MEDIA_ATTACHED, function() {
+        video.muted = true;
+        video.play();
+    });
+    }
+    else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = url;
+        video.addEventListener('canplay',function() {
+        video.play();
+        });
+    }
+    el.classList.add('muted');
+    el.onclick = function() {
+        if (el.muted) {
+            el.muted = false;
+            el.classList.remove('muted');
+        } else {
+            el.muted = true;
+            el.classList.add('muted');
+        }
+    }
+}
+
+var views = location.search.substr(1).split(',');
+var data = [];
+var loaded = 0;
+function prep(i, r) {
+    data[i] = r;
+    loaded++;
+    console.log('prep', i, r, data);
+    if (loaded == views.length) {
+        for (var i=0; i<loaded; i++) {
+            render(data[i]);
+        }
+    }
+}
+
+window.onload = function() {
+    
+    for (var i=0; i<views.length; i++) {
+        (function(i) {
+            fetch("/m3u8/" + views[i])
+            .then(r => r.json())
+            .then(r => {
+                prep(i, r);
+            });
+        })(i);
+    }
+}
+    </script>
+</head>
+<body>
+    
+</body>
+</html>
