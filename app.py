@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-
+import os
 from flask import Flask, render_template
 
 from selenium.webdriver import Firefox
@@ -7,8 +7,7 @@ from selenium.webdriver.firefox.options import Options
 
 app = Flask(__name__)
 
-m3u8s = {
-}
+m3u8s = {}
 
 @app.route('/')
 def index():
@@ -39,17 +38,29 @@ def m3u8_route(s):
 
     out[s] = m3u8s[s]
     
+    print('returning:', s)
     return out
+
+@app.route('/expire/<path:s>')
+def expire(s):
+    print('expire:', s)
+    if s in m3u8s:
+        del m3u8s[s]
+        print('deleted', s)
+        return 'deleted'
+
+    return ''
 
 
 def get_m3u8(stream):
     opts = Options()
     opts.headless = True
+    domain = os.getenv('DOMAIN')
 
     driver = Firefox(options=opts)
 
     try:
-        driver.get('https://ustv247.tv/%s/' % stream)
+        driver.get('https://%s/%s/' % (domain, stream))
         seq = driver.find_elements_by_tag_name('iframe')
         for index in range(len(seq)):
             driver.switch_to_default_content()
@@ -59,6 +70,8 @@ def get_m3u8(stream):
                 f = driver.execute_script("return jwplayer('player').getPlaylist()[0].file")
                 if f:
                     print('found m3u8:', f)
+                    if f.startswith('https:///'):
+                        f = f.replace('https:///', 'https://%s/' % domain)
                     return f
             except Exception:
                 pass
