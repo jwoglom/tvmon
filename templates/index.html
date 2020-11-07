@@ -38,24 +38,49 @@ function render(r) {
 }
 
 function play(el, url) {
+    var video = el;
     if(Hls.isSupported()) {
-        var video = el;
         var hls = new Hls({
             debug: true
         });
         hls.loadSource(url);
         hls.attachMedia(video);
         hls.on(Hls.Events.MEDIA_ATTACHED, function() {
-        video.muted = true;
-        video.play();
-    });
+            video.muted = true;
+            video.play();
+        });
     }
     else if (video.canPlayType('application/vnd.apple.mpegurl')) {
         video.src = url;
-        video.addEventListener('canplay',function() {
-        video.play();
+        video.addEventListener('canplay', function() {
+            video.play();
         });
     }
+    var timer = null;
+    var lastTime = 0;
+    var stallFunc = function() {
+        if (!video.paused && video.currentTime == lastTime) {
+            console.warn("STALLED "+el.id);
+            fetch("/expire/" + el.id)
+                .then(r1 => r1.text())
+                .then(r1 => {
+                    console.warn("expired " + el.id + " " + r1);
+                    video.src = '';
+                    fetch("/m3u8/" + el.id)
+                        .then(r => r.json())
+                        .then(r => {
+                            var newurl = Object.values(r)[0];
+                            console.warn("new url " + newurl, r)
+                            play(el, newurl);
+                        });
+                });
+        }
+    }
+    video.addEventListener("timeupdate", function() {
+        clearTimeout(timer);
+        lastTime = video.currentTime;
+        timer = setTimeout(stallFunc, 10000);
+    });
     el.classList.add('muted');
     el.onclick = function() {
         document.querySelectorAll("video").forEach(function(el2) {
@@ -88,7 +113,7 @@ function prep(i, r) {
     data[i] = r;
     loaded++;
     console.log('prep', i, r, data);
-    if (loaded == views.length) {
+    if (loaded >= views.length) {
         document.querySelector(".loading-div").remove();
         for (var i=0; i<loaded; i++) {
             render(data[i]);
@@ -97,14 +122,13 @@ function prep(i, r) {
 }
 
 window.onload = function() {
-    
     for (var i=0; i<views.length; i++) {
         (function(i) {
             fetch("/m3u8/" + views[i])
-            .then(r => r.json())
-            .then(r => {
-                prep(i, r);
-            });
+                .then(r => r.json())
+                .then(r => {
+                    prep(i, r);
+                });
         })(i);
     }
 }
