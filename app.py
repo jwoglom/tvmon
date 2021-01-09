@@ -51,6 +51,17 @@ def expire(s):
 
     return ''
 
+@app.route('/expire_all')
+def expire_all():
+    print('expire_all')
+    count = 0
+    for s in m3u8s:
+        del m3u8s[s]
+        print('deleted', s)
+        count += 1
+
+    return 'deleted {}'.format(count)
+
 
 def get_m3u8(stream):
     opts = Options()

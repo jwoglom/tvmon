@@ -31,10 +31,14 @@ video.expanded {
 
 function render(r) {
     var v = document.createElement('video');
-    v.id = Object.keys(r)[0];
+    if (r != null) {
+        v.id = Object.keys(r)[0];
+    }
     document.body.appendChild(v);
-    var url = Object.values(r)[0];
-    play(v, url);
+    if (r != null) {
+        var url = Object.values(r)[0];
+        play(v, url);
+    }
 }
 
 function play(el, url) {
@@ -118,6 +122,9 @@ function prep(i, r) {
         for (var i=0; i<loaded; i++) {
             render(data[i]);
         }
+
+        // Add an empty square if there are 3 streams
+        if (loaded == 3) render(null);
     }
 }
 
