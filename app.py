@@ -84,7 +84,8 @@ def get_m3u8(stream):
                     if f.startswith('https:///'):
                         f = f.replace('https:///', 'https://%s/' % domain)
                     return f
-            except Exception:
+            except Exception as e:
+                print('exception:', e)
                 pass
     finally:
 
