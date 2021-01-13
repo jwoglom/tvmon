@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import os
+import os, time
 from flask import Flask, render_template
 
 from selenium.webdriver import Firefox
@@ -73,11 +73,18 @@ def get_m3u8(stream):
     try:
         driver.get('https://%s/%s/' % (domain, stream))
         seq = driver.find_elements_by_tag_name('iframe')
+        print('iframes:', seq)
         for index in range(len(seq)):
             driver.switch_to_default_content()
             iframe = driver.find_elements_by_tag_name('iframe')[index]
+            print('iframe:', iframe)
             driver.switch_to.frame(iframe)
             try:
+                url = driver.execute_script("return location.href")
+                print('url:', url)
+                exists = driver.execute_script("return typeof(jwplayer)")
+                if exists == "undefined":
+                    print("undefined jwplayer!")
                 f = driver.execute_script("return jwplayer('player').getPlaylist()[0].file")
                 if f:
                     print('found m3u8:', f)
