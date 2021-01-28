@@ -30,6 +30,8 @@ video.expanded {
     <script src="https://hls-js.netlify.app/dist/hls.js"></script>
     <script type="text/javascript">
 
+var use_proxy = {{ proxy }};
+
 function render(r) {
     var v = document.createElement('video');
     if (r != null) {
@@ -37,7 +39,11 @@ function render(r) {
     }
     document.body.appendChild(v);
     if (r != null) {
-        var url = Object.values(r)[0];
+        if (use_proxy) {
+            var url = "/m3u8_proxy/" + v.id;
+        } else {
+            var url = Object.values(r)[0];
+        }
         play(v, url);
     }
 }
@@ -76,7 +82,11 @@ function play(el, url) {
                         .then(r => {
                             var newurl = Object.values(r)[0];
                             console.warn("new url " + newurl, r)
-                            play(el, newurl);
+                            if (use_proxy) {
+                                play(el, "/m3u8_proxy/" + el.id);
+                            } else {
+                                play(el, newurl);
+                            }
                         });
                 });
         }
