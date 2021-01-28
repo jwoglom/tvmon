@@ -3,13 +3,18 @@ import os, time
 
 from flask import Flask, render_template, Response, request, abort
 
-from selenium.webdriver import Firefox
+from selenium.webdriver import Firefox, FirefoxProfile
 from selenium.webdriver.firefox.options import Options
+from selenium.common.exceptions import NoSuchElementException
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.common.by import By
 
 import requests
 from urllib.parse import urljoin
 
 import time
+import os, os.path
 
 class TimedSet(set):
     def __init__(self):
@@ -34,6 +39,14 @@ app = Flask(__name__)
 m3u8s = {}
 allowed_proxy_urls = TimedSet()
 domain = os.getenv('DOMAIN')
+
+ublock_xpi = 'ublock.xpi'
+UBLOCK_XPI_URL = 'https://github.com/gorhill/uBlock/releases/download/1.32.5rc3/uBlock0_1.32.5rc3.firefox.signed.xpi'
+
+if not os.path.exists(ublock_xpi):
+    print("Downloading uBlock extension...")
+    with open(ublock_xpi, 'wb') as f:
+        f.write(requests.get(UBLOCK_XPI_URL).content)
 
 @app.route('/')
 def index():
@@ -135,36 +148,87 @@ def get_m3u8(stream):
     opts = Options()
     opts.headless = True
 
+    fp = FirefoxProfile()
+    fp.set_preference("media.volume_scale", "0.0")
+
     driver_url = 'https://%s/%s' % (domain, stream)
     print("Starting webdriver: %s" % driver_url)
 
-    driver = Firefox(options=opts)
+    driver = Firefox(options=opts, firefox_profile=fp)
+     
+    print("Installing ublock..")
+    driver.install_addon(os.path.join(os.getcwd(), ublock_xpi), temporary=True)
+    print("Done installing")
 
-    def get_player_ids():
-        return driver.execute_script("ids = []; document.querySelectorAll('.jwplayer').forEach(function(e) { ids.push(e.id); }); return ids")
+    def click_play_button():
+        try:
+            WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.CSS_SELECTOR, '.stream-single-center-message-box > span')))
+            play_button = driver.find_element_by_css_selector(".stream-single-center-message-box > span")
+            if play_button:
+                play_button.click()
+                print("clicked play button")
+                time.sleep(1)
+        except NoSuchElementException:
+            print("no play button")
 
-    def get_jwplayer_url(id):
-        exists = driver.execute_script("return typeof(jwplayer)")
-        if exists == "undefined":
-            print("undefined jwplayer!")
-        f = driver.execute_script("return jwplayer('%s').getPlaylist()[0].file" % id)
-        if f:
-            print('found m3u8:', f)
-            if f.startswith('https:///'):
-                f = f.replace('https:///', 'https://%s/' % domain)
-            return f
+    def get_jwplayer_url():
+        try:
+            ids = driver.execute_script("ids = []; document.querySelectorAll('.jwplayer').forEach(function(e) { ids.push(e.id); }); return ids")
+            if not ids:
+                print("no jwplayers")
+                return None
+            id = ids[0]
+            exists = driver.execute_script("return typeof(jwplayer)")
+            if exists == "undefined":
+                print("undefined jwplayer!")
+                return None
+            f = driver.execute_script("return jwplayer('%s').getPlaylist()[0].file" % id)
+            if f:
+                print('found m3u8:', f)
+                if f.startswith('https:///'):
+                    f = f.replace('https:///', 'https://%s/' % domain)
+                return f
+        except Exception as e:
+            print("exception", e)
         
+        return None
+    
+    def get_clappr_url():
+        try:
+            exists = driver.execute_script("return typeof(player)")
+            if exists == "undefined":
+                print("undefined clappr!")
+                return None
+            f = None
+            for i in range(3):
+                f = driver.execute_script("return typeof(player.options) != 'undefined' ? player.options.source : ''")
+                if f != "":
+                    break
+                time.sleep(1)
+            if f:
+                print('found m3u8:', f)
+                if f.startswith('https:///'):
+                    f = f.replace('https:///', 'https://%s/' % domain)
+                return f
+        except Exception as e:
+            print("exception", e)
+
         return None
 
     try:
         driver.get(driver_url)
         print("Page loaded: %s" % driver_url)
-        jwplayers = get_player_ids()
-        if len(jwplayers) == 1:
-            url = get_jwplayer_url(jwplayers[0])
+
+        click_play_button()
+
+        url = get_jwplayer_url()
+        if url:
+            return url
+        else:
+            url = get_clappr_url()
             if url:
                 return url
-            
+
         seq = driver.find_elements_by_tag_name('iframe')
         for index in range(len(seq)):
             driver.switch_to_default_content()
@@ -172,13 +236,13 @@ def get_m3u8(stream):
             print('iframe:', iframe)
             driver.switch_to.frame(iframe)
             try:
-                id = 'player'
-                jwplayers = get_player_ids()
-                if len(jwplayers) == 1:
-                    id = jwplayers[0]
-                url = get_jwplayer_url(id)
+                url = get_jwplayer_url()
                 if url:
                     return url
+                else:
+                    url = get_clappr_url()
+                    if url:
+                        return url
 
             except Exception as e:
                 print('exception:', e)
