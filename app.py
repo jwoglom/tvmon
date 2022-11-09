@@ -209,7 +209,7 @@ def get_m3u8(stream):
 
     def click_play_button():
         try:
-            play_button = driver.find_element_by_css_selector(".stream-single-center-message-box > span")
+            play_button = driver.find_element(By.CSS_SELECTOR, ".stream-single-center-message-box > span")
             if play_button:
                 WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.CSS_SELECTOR, '.stream-single-center-message-box > span')))
                 play_button.click()
@@ -299,10 +299,10 @@ def get_m3u8(stream):
             if url:
                 return url
 
-        seq = driver.find_elements_by_tag_name('iframe')
+        seq = driver.find_elements(By.TAG_NAME, 'iframe')
         for index in range(len(seq)):
             driver.switch_to_default_content()
-            iframe = driver.find_elements_by_tag_name('iframe')[index]
+            iframe = driver.find_elements(By.TAG_NAME, 'iframe')[index]
             print('processing iframe %d' % index)
             driver.switch_to.frame(iframe)
             try:    
@@ -315,11 +315,11 @@ def get_m3u8(stream):
             except Exception as e:
                 print('exception:', e)
             
-            inner_seq = driver.find_elements_by_tag_name('iframe')
+            inner_seq = driver.find_elements(By.TAG_NAME, 'iframe')
             for index2 in range(len(inner_seq)):
                 driver.switch_to_default_content()
                 driver.switch_to.frame(iframe)
-                inner_iframe = driver.find_elements_by_tag_name('iframe')[index2]
+                inner_iframe = driver.find_elements(By.TAG_NAME, 'iframe')[index2]
                 print('processing inner iframe %d' % index2)
                 driver.switch_to.frame(inner_iframe)
                 try:    
