@@ -41,6 +41,7 @@ app = Flask(__name__)
 m3u8s = {}
 allowed_proxy_urls = TimedSet()
 domain = os.getenv('DOMAIN')
+firefox_binary = os.getenv('FIREFOX_BINARY')
 
 ublock_xpi = 'ublock.xpi'
 UBLOCK_XPI_URL = 'https://github.com/gorhill/uBlock/releases/download/1.32.5rc3/uBlock0_1.32.5rc3.firefox.signed.xpi'
@@ -183,6 +184,8 @@ def expire_all():
 def get_m3u8(stream):
     opts = Options()
     opts.headless = True
+    if firefox_binary:
+        opts.binary_location = firefox_binary
 
     fp = FirefoxProfile()
     fp.set_preference("media.volume_scale", "0.0")

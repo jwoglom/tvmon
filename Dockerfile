@@ -13,5 +13,7 @@ RUN python3 -m pip install -r requirements.txt
 EXPOSE 4444
 EXPOSE 5000
 
+ENV FIREFOX_BINARY=/opt/firefox/firefox
+
 ENTRYPOINT ["bash"]
-CMD ["-c", "python3 -m flask run --host 0.0.0.0"]
+CMD ["-c", "FIREFOX_BINARY=/opt/firefox/firefox python3 -m flask run --host 0.0.0.0"]
