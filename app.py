@@ -301,7 +301,7 @@ def get_m3u8(stream):
 
         seq = driver.find_elements(By.TAG_NAME, 'iframe')
         for index in range(len(seq)):
-            driver.switch_to_default_content()
+            driver.switch_to.default_content()
             iframe = driver.find_elements(By.TAG_NAME, 'iframe')[index]
             print('processing iframe %d' % index)
             driver.switch_to.frame(iframe)
@@ -317,7 +317,7 @@ def get_m3u8(stream):
             
             inner_seq = driver.find_elements(By.TAG_NAME, 'iframe')
             for index2 in range(len(inner_seq)):
-                driver.switch_to_default_content()
+                driver.switch_to.default_content()
                 driver.switch_to.frame(iframe)
                 inner_iframe = driver.find_elements(By.TAG_NAME, 'iframe')[index2]
                 print('processing inner iframe %d' % index2)
