@@ -44,7 +44,7 @@ domain = os.getenv('DOMAIN')
 firefox_binary = os.getenv('FIREFOX_BINARY')
 
 ublock_xpi = 'ublock.xpi'
-UBLOCK_XPI_URL = 'https://github.com/gorhill/uBlock/releases/download/1.32.5rc3/uBlock0_1.32.5rc3.firefox.signed.xpi'
+UBLOCK_XPI_URL = 'https://github.com/gorhill/uBlock/releases/download/1.45.0/uBlock0_1.45.0.firefox.xpi'
 
 if not os.path.exists(ublock_xpi):
     print("Downloading uBlock extension...")
