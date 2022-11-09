@@ -128,7 +128,8 @@ def m3u8_route(s):
 
 def proxy_url_for(url):
     u = urljoin(request.base_url, '/proxy_url?url=%s' % url)
-    if proxy_is_https and u.startswith('http://'):
+    is_https = request.headers.get('CF-Visitor') and 'https' in request.headers.get('CF-Visitor')
+    if (proxy_is_https or is_https) and u.startswith('http://'):
         u = 'https://' + u[len('http://'):]
     return u
 
