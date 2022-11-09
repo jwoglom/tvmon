@@ -1,3 +1,5 @@
 flask
 selenium
 bs4
+requests
+prometheus-flask-exporter

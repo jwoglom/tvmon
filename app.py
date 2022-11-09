@@ -2,6 +2,7 @@
 import os, time
 
 from flask import Flask, render_template, Response, request, abort, redirect
+from prometheus_flask_exporter import PrometheusMetrics
 
 from selenium.webdriver import Firefox, FirefoxProfile
 from selenium.webdriver.firefox.options import Options
@@ -37,12 +38,18 @@ class TimedSet(set):
                 yield item
 
 app = Flask(__name__)
+metrics = PrometheusMetrics(app)
 
 m3u8s = {}
 allowed_proxy_domains = TimedSet()
 domain = os.getenv('DOMAIN')
 firefox_binary = os.getenv('FIREFOX_BINARY')
 proxy_is_https = os.getenv('PROXY_IS_HTTPS')
+
+def is_https():
+    cf_https = request.headers.get('CF-Visitor') and 'https' in request.headers.get('CF-Visitor')
+    return proxy_is_https or cf_https
+
 
 ublock_xpi = 'ublock.xpi'
 UBLOCK_XPI_URL = 'https://github.com/gorhill/uBlock/releases/download/1.45.0/uBlock0_1.45.0.firefox.xpi'
@@ -71,7 +78,7 @@ def channels():
         print('selected:', selected)
         pfx = 'proxy' if request.args.get('proxy') else ''
         return redirect('/%s?%s' % (pfx, ','.join(selected)))
-    return render_template('channels.html')
+    return render_template('channels.html', proxy=is_https())
 
 @app.route('/channels.json')
 def channels_json():
@@ -129,8 +136,8 @@ def m3u8_route(s):
 
 def proxy_url_for(url):
     u = urljoin(request.base_url, '/proxy_url?url=%s' % url)
-    is_https = request.headers.get('CF-Visitor') and 'https' in request.headers.get('CF-Visitor')
-    if (proxy_is_https or is_https) and u.startswith('http://'):
+    
+    if is_https() and u.startswith('http://'):
         u = 'https://' + u[len('http://'):]
     return u
 
