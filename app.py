@@ -2,7 +2,9 @@
 import os, time
 
 from flask import Flask, render_template, Response, request, abort, redirect
+
 from prometheus_flask_exporter import PrometheusMetrics
+from prometheus_client import Counter
 
 from selenium.webdriver import Firefox, FirefoxProfile
 from selenium.webdriver.firefox.options import Options
@@ -39,6 +41,11 @@ class TimedSet(set):
 
 app = Flask(__name__)
 metrics = PrometheusMetrics(app)
+
+requested_m3u8_streams = Counter('requested_m3u8_streams', 'Requested m3u8 streams', ['domain', 'stream'])
+fetched_m3u8_streams = Counter('fetched_m3u8_streams', 'Fetched m3u8 streams via webdriver', ['domain', 'stream'])
+proxied_m3u8_streams = Counter('proxied_m3u8_streams', 'Proxied m3u8 stream urls', ['domain', 'stream'])
+proxied_m3u8_clips = Counter('proxied_m3u8_clips', 'Proxied m3u8 stream clips', ['domain', 'stream'])
 
 m3u8s = {}
 allowed_proxy_domains = TimedSet()
@@ -113,6 +120,8 @@ def m3u8s_route(streams):
     out = {}
     if len(m3u8s) == 0:
         for s in streams.split(','):
+            requested_m3u8_streams.labels(domain, s).inc()
+
             if not s in m3u8s:
                 m3u8s[s] = get_m3u8(s)
 
@@ -123,6 +132,7 @@ def m3u8s_route(streams):
 @app.route('/m3u8/<path:s>')
 def m3u8_route(s):
     print('stream:', s)
+    requested_m3u8_streams.labels(domain, s).inc()
 
     out = {}
 
@@ -134,21 +144,21 @@ def m3u8_route(s):
     print('returning:', s)
     return out
 
-def proxy_url_for(url):
-    u = urljoin(request.base_url, '/proxy_url?url=%s' % url)
+def proxy_url_for(stream_id, url):
+    u = urljoin(request.base_url, '/proxy_url?stream=%s&url=%s' % (stream_id, url))
     
     if is_https() and u.startswith('http://'):
         u = 'https://' + u[len('http://'):]
     return u
 
-def rewrite_m3u8(raw, url):
+def rewrite_m3u8(raw, url, stream_id):
     out = []
     for line in raw.splitlines():
         if line.startswith('#') or line.startswith('http'):
             out.append(line)
         else:
             rawurl = urljoin(url, line)
-            pu = proxy_url_for(rawurl)
+            pu = proxy_url_for(stream_id, rawurl)
             allowed_proxy_domains.add(urlparse(rawurl).netloc)
             out.append(pu)
     return '\n'.join(out)
@@ -167,6 +177,7 @@ def proxy_url_route():
     if not url or "url=" not in url:
         abort(404, description="no URL")
         return
+    stream_id = url.split('&')[0].split('stream=')[1]
     url = url.split('url=', 1)[1]
     domain = urlparse(url).netloc
     if domain not in allowed_proxy_domains:
@@ -178,21 +189,24 @@ def proxy_url_route():
     ct = r.headers['content-type']
     if ct.lower() == 'application/vnd.apple.mpegurl':
         print('Proxying m3u8 %s' % url)
-        return Response(rewrite_m3u8(r.text, url), mimetype=ct)
+        proxied_m3u8_streams.labels(domain, stream_id).inc()
+        return Response(rewrite_m3u8(r.text, url, stream_id), mimetype=ct)
     print('Proxying raw content %s' % url)
+    proxied_m3u8_clips.labels(domain, stream_id).inc()
     return Response(r.content, mimetype=ct)
 
 @app.route('/m3u8_proxy/<path:s>')
 def m3u8_proxy_route(s):
     print('stream:', s)
 
+    proxied_m3u8_streams.labels(domain, s).inc()
     if not s in m3u8s:
         m3u8s[s] = get_m3u8(s)
 
     r = requests.get(m3u8s[s], headers={'referer': 'http://%s' % domain})
     
     print('returning direct m3u8:', s)
-    return Response(rewrite_m3u8(r.text, m3u8s[s]), mimetype=r.headers['content-type'])
+    return Response(rewrite_m3u8(r.text, m3u8s[s], s), mimetype=r.headers['content-type'])
 
 @app.route('/expire/<path:s>')
 def expire(s):
@@ -216,6 +230,7 @@ def expire_all():
     return 'deleted {}'.format(count)
 
 def get_m3u8(stream):
+    fetched_m3u8_streams.labels(domain, stream).inc()
     opts = Options()
     opts.headless = True
     if firefox_binary:
