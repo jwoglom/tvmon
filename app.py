@@ -128,8 +128,8 @@ def m3u8_route(s):
 
 def proxy_url_for(url):
     u = urljoin(request.base_url, '/proxy_url?url=%s' % url)
-    if proxy_is_https:
-        u = 'https://' + u.stripprefix('http://')
+    if proxy_is_https and u.startswith('http://'):
+        u = 'https://' + u[len('http://'):]
     return u
 
 def rewrite_m3u8(raw, url):
@@ -148,6 +148,9 @@ def rewrite_m3u8(raw, url):
 def get_allowed_proxy_domains():
     return {"allowed_proxy_domains": list(allowed_proxy_domains)}
 
+@app.route('/favicon.ico')
+def favicon_ico():
+    return ''
 
 @app.route('/proxy_url')
 def proxy_url_route():
