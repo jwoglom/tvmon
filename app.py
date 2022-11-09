@@ -42,11 +42,11 @@ class TimedSet(set):
 app = Flask(__name__)
 metrics = PrometheusMetrics(app)
 
-requested_m3u8_streams = Counter('requested_m3u8_streams', 'Requested m3u8 streams', ['domain', 'stream'])
-fetched_m3u8_streams = Counter('fetched_m3u8_streams', 'Fetched m3u8 streams via webdriver', ['domain', 'stream'])
-proxied_m3u8_streams = Counter('proxied_m3u8_streams', 'Proxied m3u8 stream urls', ['domain', 'stream', 'proxy_domain'])
-proxied_m3u8_clips = Counter('proxied_m3u8_clips', 'Proxied m3u8 stream clips', ['domain', 'stream', 'proxy_domain'])
-invalid_proxy_domains = Counter('invalid_proxy_domains', 'Invalid proxy domains', ['domain', 'stream', 'proxy_domain'])
+requested_m3u8_streams = Counter('requested_m3u8_streams', 'Requested m3u8 streams', ['domain', 'stream', 'https'])
+fetched_m3u8_streams = Counter('fetched_m3u8_streams', 'Fetched m3u8 streams via webdriver', ['domain', 'stream', 'https'])
+proxied_m3u8_streams = Counter('proxied_m3u8_streams', 'Proxied m3u8 stream urls', ['domain', 'stream', 'proxy_domain', 'https'])
+proxied_m3u8_clips = Counter('proxied_m3u8_clips', 'Proxied m3u8 stream clips', ['domain', 'stream', 'proxy_domain', 'https'])
+invalid_proxy_domains = Counter('invalid_proxy_domains', 'Invalid proxy domains', ['domain', 'stream', 'proxy_domain', 'https'])
 get_m3u8_time = Histogram('get_m3u8_time', 'Time to fetch a m3u8', ['domain', 'stream'])
 
 m3u8s = {}
@@ -57,7 +57,7 @@ proxy_is_https = os.getenv('PROXY_IS_HTTPS')
 
 def is_https():
     cf_https = request.headers.get('CF-Visitor') and 'https' in request.headers.get('CF-Visitor')
-    return proxy_is_https or cf_https
+    return bool(proxy_is_https or cf_https)
 
 
 ublock_xpi = 'ublock.xpi'
@@ -122,11 +122,12 @@ def m3u8s_route(streams):
     out = {}
     if len(m3u8s) == 0:
         for s in streams.split(','):
-            requested_m3u8_streams.labels(domain, s).inc()
+            requested_m3u8_streams.labels(domain, s, is_https()).inc()
 
             if not s in m3u8s:
                 _get_m3u8_time = get_m3u8_time.labels(domain, s)
                 with _get_m3u8_time.time():
+                    fetched_m3u8_streams.labels(domain, s, is_https()).inc()
                     m3u8s[s] = get_m3u8(s)
 
             out[s] = m3u8s[s]
@@ -136,13 +137,14 @@ def m3u8s_route(streams):
 @app.route('/m3u8/<path:s>')
 def m3u8_route(s):
     print('stream:', s)
-    requested_m3u8_streams.labels(domain, s).inc()
+    requested_m3u8_streams.labels(domain, s, is_https()).inc()
 
     out = {}
 
     if not s in m3u8s:
         _get_m3u8_time = get_m3u8_time.labels(domain, s)
         with _get_m3u8_time.time():
+            fetched_m3u8_streams.labels(domain, s, is_https()).inc()
             m3u8s[s] = get_m3u8(s)
 
     out[s] = m3u8s[s]
@@ -188,7 +190,7 @@ def proxy_url_route():
     proxy_domain = urlparse(url).netloc
     if proxy_domain not in allowed_proxy_domains:
         print("Disallowed proxy domain domain:", proxy_domain, "url:", url)
-        invalid_proxy_domains.labels(domain, stream_id, proxy_domain).inc()
+        invalid_proxy_domains.labels(domain, stream_id, proxy_domain, is_https()).inc()
         abort(403, description="Disallowed proxy domain: %s" % proxy_domain)
         return
 
@@ -196,17 +198,17 @@ def proxy_url_route():
     ct = r.headers['content-type']
     if ct.lower() == 'application/vnd.apple.mpegurl':
         print('Proxying m3u8 %s' % url)
-        proxied_m3u8_streams.labels(domain, stream_id, proxy_domain).inc()
+        proxied_m3u8_streams.labels(domain, stream_id, proxy_domain, is_https()).inc()
         return Response(rewrite_m3u8(r.text, url, stream_id), mimetype=ct)
     print('Proxying raw content %s' % url)
-    proxied_m3u8_clips.labels(domain, stream_id, proxy_domain).inc()
+    proxied_m3u8_clips.labels(domain, stream_id, proxy_domain, is_https()).inc()
     return Response(r.content, mimetype=ct)
 
 @app.route('/m3u8_proxy/<path:s>')
 def m3u8_proxy_route(s):
     print('stream:', s)
 
-    proxied_m3u8_streams.labels(domain, s, '').inc()
+    proxied_m3u8_streams.labels(domain, s, '', is_https()).inc()
     if not s in m3u8s:
         _get_m3u8_time = get_m3u8_time.labels(domain, s)
         with _get_m3u8_time.time():
@@ -239,7 +241,6 @@ def expire_all():
     return 'deleted {}'.format(count)
 
 def get_m3u8(stream):
-    fetched_m3u8_streams.labels(domain, stream).inc()
     opts = Options()
     opts.headless = True
     if firefox_binary:
