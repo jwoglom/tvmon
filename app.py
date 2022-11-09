@@ -69,7 +69,8 @@ def channels():
     selected = request.args.getlist('channel')
     if selected:
         print('selected:', selected)
-        return redirect('/?%s' % ','.join(selected))
+        pfx = 'proxy' if request.args.get('proxy') else ''
+        return redirect('/%s?%s' % (pfx, ','.join(selected)))
     return render_template('channels.html')
 
 @app.route('/channels.json')
