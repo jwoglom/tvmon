@@ -46,10 +46,14 @@ firefox_binary = os.getenv('FIREFOX_BINARY')
 ublock_xpi = 'ublock.xpi'
 UBLOCK_XPI_URL = 'https://github.com/gorhill/uBlock/releases/download/1.45.0/uBlock0_1.45.0.firefox.xpi'
 
-if not os.path.exists(ublock_xpi):
-    print("Downloading uBlock extension...")
-    with open(ublock_xpi, 'wb') as f:
-        f.write(requests.get(UBLOCK_XPI_URL).content)
+def check_ublock_xpi():
+    if not os.path.exists(ublock_xpi):
+        print("Downloading uBlock extension...")
+        with open(ublock_xpi, 'wb') as f:
+            f.write(requests.get(UBLOCK_XPI_URL).content)
+    print("uBlock xpi status:", os.path.exists(ublock_xpi))
+
+check_ublock_xpi()
 
 @app.route('/')
 def index():
@@ -199,6 +203,7 @@ def get_m3u8(stream):
     driver = Firefox(options=opts, firefox_profile=fp)
      
     print("Installing ublock..")
+    check_ublock_xpi()
     driver.install_addon(os.path.join(os.getcwd(), ublock_xpi), temporary=True)
     print("Done installing")
 
