@@ -4,7 +4,7 @@ import os, time
 from flask import Flask, render_template, Response, request, abort, redirect
 
 from prometheus_flask_exporter import PrometheusMetrics
-from prometheus_client import Counter
+from prometheus_client import Counter, Histogram
 
 from selenium.webdriver import Firefox, FirefoxProfile
 from selenium.webdriver.firefox.options import Options
@@ -44,8 +44,10 @@ metrics = PrometheusMetrics(app)
 
 requested_m3u8_streams = Counter('requested_m3u8_streams', 'Requested m3u8 streams', ['domain', 'stream'])
 fetched_m3u8_streams = Counter('fetched_m3u8_streams', 'Fetched m3u8 streams via webdriver', ['domain', 'stream'])
-proxied_m3u8_streams = Counter('proxied_m3u8_streams', 'Proxied m3u8 stream urls', ['domain', 'stream'])
-proxied_m3u8_clips = Counter('proxied_m3u8_clips', 'Proxied m3u8 stream clips', ['domain', 'stream'])
+proxied_m3u8_streams = Counter('proxied_m3u8_streams', 'Proxied m3u8 stream urls', ['domain', 'stream', 'proxy_domain'])
+proxied_m3u8_clips = Counter('proxied_m3u8_clips', 'Proxied m3u8 stream clips', ['domain', 'stream', 'proxy_domain'])
+invalid_proxy_domains = Counter('invalid_proxy_domains', 'Invalid proxy domains', ['domain', 'stream', 'proxy_domain'])
+get_m3u8_time = Histogram('get_m3u8_time', 'Time to fetch a m3u8', ['domain', 'stream'])
 
 m3u8s = {}
 allowed_proxy_domains = TimedSet()
@@ -123,7 +125,9 @@ def m3u8s_route(streams):
             requested_m3u8_streams.labels(domain, s).inc()
 
             if not s in m3u8s:
-                m3u8s[s] = get_m3u8(s)
+                _get_m3u8_time = get_m3u8_time.labels(domain, s)
+                with _get_m3u8_time.time():
+                    m3u8s[s] = get_m3u8(s)
 
             out[s] = m3u8s[s]
     
@@ -137,7 +141,9 @@ def m3u8_route(s):
     out = {}
 
     if not s in m3u8s:
-        m3u8s[s] = get_m3u8(s)
+        _get_m3u8_time = get_m3u8_time.labels(domain, s)
+        with _get_m3u8_time.time():
+            m3u8s[s] = get_m3u8(s)
 
     out[s] = m3u8s[s]
     
@@ -179,29 +185,32 @@ def proxy_url_route():
         return
     stream_id = url.split('&')[0].split('stream=')[1]
     url = url.split('url=', 1)[1]
-    domain = urlparse(url).netloc
-    if domain not in allowed_proxy_domains:
-        print("Disallowed proxy domain domain:", domain, "url:", url)
-        abort(403, description="Disallowed proxy domain: %s" % domain)
+    proxy_domain = urlparse(url).netloc
+    if proxy_domain not in allowed_proxy_domains:
+        print("Disallowed proxy domain domain:", proxy_domain, "url:", url)
+        invalid_proxy_domains.labels(domain, stream_id, proxy_domain).inc()
+        abort(403, description="Disallowed proxy domain: %s" % proxy_domain)
         return
 
     r = requests.get(url, headers={'referer': 'http://%s' % domain})
     ct = r.headers['content-type']
     if ct.lower() == 'application/vnd.apple.mpegurl':
         print('Proxying m3u8 %s' % url)
-        proxied_m3u8_streams.labels(domain, stream_id).inc()
+        proxied_m3u8_streams.labels(domain, stream_id, proxy_domain).inc()
         return Response(rewrite_m3u8(r.text, url, stream_id), mimetype=ct)
     print('Proxying raw content %s' % url)
-    proxied_m3u8_clips.labels(domain, stream_id).inc()
+    proxied_m3u8_clips.labels(domain, stream_id, proxy_domain).inc()
     return Response(r.content, mimetype=ct)
 
 @app.route('/m3u8_proxy/<path:s>')
 def m3u8_proxy_route(s):
     print('stream:', s)
 
-    proxied_m3u8_streams.labels(domain, s).inc()
+    proxied_m3u8_streams.labels(domain, s, '').inc()
     if not s in m3u8s:
-        m3u8s[s] = get_m3u8(s)
+        _get_m3u8_time = get_m3u8_time.labels(domain, s)
+        with _get_m3u8_time.time():
+            m3u8s[s] = get_m3u8(s)
 
     r = requests.get(m3u8s[s], headers={'referer': 'http://%s' % domain})
     
