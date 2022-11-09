@@ -12,4 +12,4 @@ EXPOSE 4444
 EXPOSE 5000
 
 ENTRYPOINT ["bash"]
-CMD ["-c", "python3 -m flask run"]
+CMD ["-c", "python3 -m flask run --host 0.0.0.0"]
