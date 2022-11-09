@@ -151,7 +151,10 @@ def get_m3u8(stream):
     fp = FirefoxProfile()
     fp.set_preference("media.volume_scale", "0.0")
 
-    driver_url = 'https://%s/%s' % (domain, stream)
+    if domain:
+        driver_url = 'https://%s/%s' % (domain, stream)
+    else:
+        driver_url = 'https://%s' % (stream)
     print("Starting webdriver: %s" % driver_url)
 
     driver = Firefox(options=opts, firefox_profile=fp)
@@ -162,9 +165,9 @@ def get_m3u8(stream):
 
     def click_play_button():
         try:
-            WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.CSS_SELECTOR, '.stream-single-center-message-box > span')))
             play_button = driver.find_element_by_css_selector(".stream-single-center-message-box > span")
             if play_button:
+                WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.CSS_SELECTOR, '.stream-single-center-message-box > span')))
                 play_button.click()
                 print("clicked play button")
                 time.sleep(1)
@@ -201,7 +204,7 @@ def get_m3u8(stream):
                 return None
             f = None
             for i in range(3):
-                f = driver.execute_script("return typeof(player.options) != 'undefined' ? player.options.source : ''")
+                f = driver.execute_script("return typeof(player.options) != 'undefined' && typeof(player.version) == 'undefined' ? player.options.source : ''")
                 if f != "":
                     break
                 time.sleep(1)
@@ -214,6 +217,32 @@ def get_m3u8(stream):
             print("exception", e)
 
         return None
+    
+    def get_bitmovin_url():
+        try:
+            exists = driver.execute_script("return typeof(player)")
+            if exists == "undefined":
+                print("undefined bitmovin!")
+                return None
+            f = None
+            for i in range(3):
+                f = driver.execute_script("return typeof(player.options) == 'undefined' && typeof(player.version) != 'undefined' ? player.getSource()['hls'] : ''")
+                if f != "":
+                    break
+                time.sleep(1)
+            if f:
+                print('found m3u8:', f)
+                if f.startswith('https:///'):
+                    f = f.replace('https:///', 'https://%s/' % domain)
+                elif f.startswith('//'):
+                    f = 'https:' + f
+                return f
+        except Exception as e:
+            print("exception", e)
+
+        return None
+    
+    url_attempts = [get_jwplayer_url, get_clappr_url, get_bitmovin_url]
 
     try:
         driver.get(driver_url)
@@ -221,11 +250,8 @@ def get_m3u8(stream):
 
         click_play_button()
 
-        url = get_jwplayer_url()
-        if url:
-            return url
-        else:
-            url = get_clappr_url()
+        for f in url_attempts:
+            url = f()
             if url:
                 return url
 
@@ -233,19 +259,33 @@ def get_m3u8(stream):
         for index in range(len(seq)):
             driver.switch_to_default_content()
             iframe = driver.find_elements_by_tag_name('iframe')[index]
-            print('iframe:', iframe)
+            print('processing iframe %d' % index)
             driver.switch_to.frame(iframe)
-            try:
-                url = get_jwplayer_url()
-                if url:
-                    return url
-                else:
-                    url = get_clappr_url()
+            try:    
+
+                for f in url_attempts:
+                    url = f()
                     if url:
                         return url
 
             except Exception as e:
                 print('exception:', e)
-                pass
+            
+            inner_seq = driver.find_elements_by_tag_name('iframe')
+            for index2 in range(len(inner_seq)):
+                driver.switch_to_default_content()
+                driver.switch_to.frame(iframe)
+                inner_iframe = driver.find_elements_by_tag_name('iframe')[index2]
+                print('processing inner iframe %d' % index2)
+                driver.switch_to.frame(inner_iframe)
+                try:    
+
+                    for f in url_attempts:
+                        url = f()
+                        if url:
+                            return url
+
+                except Exception as e:
+                    print('exception:', e)
     finally:
         driver.quit()
