@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+<head>
+    <title>TVMon</title>
+    <script>
+window.onload = function() {
+    fetch("/channels.json")
+        .then(r => r.json())
+        .then(r => {
+            var chans = document.querySelector("#channels");
+            chans.innerHTML = '';
+            r["channels"].forEach(chan => {
+                var inp = document.createElement('input');
+                inp.type = 'checkbox';
+                inp.name = 'channel';
+                inp.value = chan.id;
+                inp.id = 'chan_' + chan.id;
+                var sp = document.createElement('label');
+                sp.setAttribute('for', 'chan_' + chan.id);
+                sp.innerText = chan.name;
+                chans.appendChild(inp);
+                chans.appendChild(sp);
+                chans.appendChild(document.createElement('br'));
+            });
+        });
+}
+    </script>
+</head>
+<body>
+    <h1>Channels</h1>
+    <form action="" method="get">
+        <div id="channels">Loading...</div>
+        <input type="submit" />
+    </form>
+</body>
+</html>

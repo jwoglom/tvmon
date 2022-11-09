@@ -140,6 +140,10 @@ function prep(i, r) {
 }
 
 window.onload = function() {
+    if (!views || views.length == 0 || views.length == 1 && !views[0]) {
+        location.href = '/channels';
+        return;
+    }
     for (var i=0; i<views.length; i++) {
         (function(i) {
             fetch("/m3u8/" + views[i])

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import os, time
 
-from flask import Flask, render_template, Response, request, abort
+from flask import Flask, render_template, Response, request, abort, redirect
 
 from selenium.webdriver import Firefox, FirefoxProfile
 from selenium.webdriver.firefox.options import Options
@@ -10,8 +10,10 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.by import By
 
+from bs4 import BeautifulSoup
+
 import requests
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import time
 import os, os.path
@@ -55,6 +57,40 @@ def index():
 @app.route('/proxy')
 def index_proxy():
     return render_template('index.html', proxy="true")
+
+@app.route('/channels')
+def channels():
+    selected = request.args.getlist('channel')
+    if selected:
+        print('selected:', selected)
+        return redirect('/?%s' % ','.join(selected))
+    return render_template('channels.html')
+
+@app.route('/channels.json')
+def channels_json():
+    r = requests.get('http://%s' % domain, allow_redirects=True)
+
+    channels = []
+    
+    s = BeautifulSoup(r.text)
+    for item in s.select('ol li'):
+        print('channels_json item', item)
+        link = item.select('a')
+        cid = None
+        name = None
+        if link:
+            cid = link[0].get('href')
+            if cid:
+                cid = urlparse(cid)
+                if cid:
+                    cid = cid.path.replace('/', '')
+            name = link[0].text
+        
+        if cid and name:
+            channels.append({"id": cid, "name": name})
+
+    print('channels_json', channels)
+    return {"channels": channels}
 
 @app.route('/m3u8s/<path:streams>')
 def m3u8s_route(streams):
