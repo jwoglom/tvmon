@@ -39,9 +39,10 @@ class TimedSet(set):
 app = Flask(__name__)
 
 m3u8s = {}
-allowed_proxy_urls = TimedSet()
+allowed_proxy_domains = TimedSet()
 domain = os.getenv('DOMAIN')
 firefox_binary = os.getenv('FIREFOX_BINARY')
+proxy_is_https = os.getenv('PROXY_IS_HTTPS')
 
 ublock_xpi = 'ublock.xpi'
 UBLOCK_XPI_URL = 'https://github.com/gorhill/uBlock/releases/download/1.45.0/uBlock0_1.45.0.firefox.xpi'
@@ -126,7 +127,10 @@ def m3u8_route(s):
     return out
 
 def proxy_url_for(url):
-    return urljoin(request.base_url, '/proxy_url?url=%s' % url)
+    u = urljoin(request.base_url, '/proxy_url?url=%s' % url)
+    if proxy_is_https:
+        u = 'https://' + u.stripprefix('http://')
+    return u
 
 def rewrite_m3u8(raw, url):
     out = []
@@ -134,23 +138,37 @@ def rewrite_m3u8(raw, url):
         if line.startswith('#') or line.startswith('http'):
             out.append(line)
         else:
-            pu = proxy_url_for(urljoin(url, line))
-            allowed_proxy_urls.add(urljoin(url, line))
+            rawurl = urljoin(url, line)
+            pu = proxy_url_for(rawurl)
+            allowed_proxy_domains.add(urlparse(rawurl).netloc)
             out.append(pu)
     return '\n'.join(out)
 
+@app.route('/allowed_proxy_domains')
+def get_allowed_proxy_domains():
+    return {"allowed_proxy_domains": list(allowed_proxy_domains)}
+
+
 @app.route('/proxy_url')
 def proxy_url_route():
-    url = request.args.get('url')
-    if url not in allowed_proxy_urls:
-        abort(403, description="Disallowed proxy URL")
+    url = request.query_string.decode()
+    if not url or "url=" not in url:
+        abort(404, description="no URL")
+        return
+    url = url.split('url=', 1)[1]
+    domain = urlparse(url).netloc
+    if domain not in allowed_proxy_domains:
+        print("Disallowed proxy domain domain:", domain, "url:", url)
+        abort(403, description="Disallowed proxy domain: %s" % domain)
         return
 
     r = requests.get(url, headers={'referer': 'http://%s' % domain})
     ct = r.headers['content-type']
     if ct.lower() == 'application/vnd.apple.mpegurl':
+        print('Proxying m3u8 %s' % url)
         return Response(rewrite_m3u8(r.text, url), mimetype=ct)
-    return Response(r.text, mimetype=ct)
+    print('Proxying raw content %s' % url)
+    return Response(r.content, mimetype=ct)
 
 @app.route('/m3u8_proxy/<path:s>')
 def m3u8_proxy_route(s):
