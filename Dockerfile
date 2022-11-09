@@ -2,7 +2,9 @@ FROM instrumentisto/geckodriver:debian
 
 COPY requirements.txt .
 COPY app.py .
-COPY templates .
+RUN mkdir /templates
+COPY templates/index.html /templates/
+COPY templates/channels.html /templates/
 
 RUN apt-get update
 RUN apt-get install -y python3 python3-pip python3-flask python3-bs4 python3-requests
