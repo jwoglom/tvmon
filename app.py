@@ -61,13 +61,28 @@ def is_https():
 
 
 ublock_xpi = 'ublock.xpi'
-UBLOCK_XPI_URL = 'https://github.com/gorhill/uBlock/releases/download/1.45.0/uBlock0_1.45.0.firefox.xpi'
+UBLOCK_RELEASES = 'https://github.com/gorhill/uBlock/releases'
 
 def check_ublock_xpi():
     if not os.path.exists(ublock_xpi):
         print("Downloading uBlock extension...")
-        with open(ublock_xpi, 'wb') as f:
-            f.write(requests.get(UBLOCK_XPI_URL).content)
+        r = requests.get(UBLOCK_RELEASES)
+        if r.status_code/100 == 2:
+            s = BeautifulSoup(r.text)
+            for item in s.select('a'):
+                link = item.get('href')
+                if link.endswith('.firefox.signed.xpi'):
+                    print("ublock.xpi link:", link)
+                    rx = requests.get(link)
+                    if rx.status_code/100 == 2:
+                        with open(ublock_xpi, 'wb') as f:
+                            f.write(rx.content)
+                            print("wrote ublock xpi")
+                            break
+                    else:
+                        print("error xpi:", rx.status_code)
+        else:
+            print("error:", r.status_code, r.text)
     print("uBlock xpi status:", os.path.exists(ublock_xpi))
 
 check_ublock_xpi()
@@ -257,10 +272,13 @@ def get_m3u8(stream):
 
     driver = Firefox(options=opts, firefox_profile=fp)
      
-    print("Installing ublock..")
-    check_ublock_xpi()
-    driver.install_addon(os.path.join(os.getcwd(), ublock_xpi), temporary=True)
-    print("Done installing")
+    try:
+        print("Installing ublock..")
+        check_ublock_xpi()
+        driver.install_addon(os.path.join(os.getcwd(), ublock_xpi), temporary=True)
+        print("Done installing")
+    except Exception as e:
+        print(e)
 
     def click_play_button():
         try:
