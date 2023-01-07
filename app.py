@@ -236,12 +236,16 @@ def m3u8_proxy_route(s):
 
 @app.route('/expire/<path:s>')
 def expire(s):
-    print('expire:', s)
-    if s in m3u8s:
-        del m3u8s[s]
-        print('deleted', s)
-        return 'deleted'
+    count = []
+    for t in s.split(','):
+        print('expire:', t)
+        if t in m3u8s:
+            del m3u8s[t]
+            print('deleted', t)
+            count.append(t)
 
+    if count:
+        return 'deleted {}'.format(count)
     return ''
 
 @app.route('/expire_all')
