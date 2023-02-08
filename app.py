@@ -18,8 +18,12 @@ from bs4 import BeautifulSoup
 import requests
 from urllib.parse import urljoin, urlparse
 
+import json
 import time
 import os, os.path
+
+session = requests.Session()
+session.headers.update({'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36'})
 
 class TimedSet(set):
     def __init__(self):
@@ -57,6 +61,7 @@ if 'http' in domain_raw:
     domain = urlparse(domain_raw).netloc
 firefox_binary = os.getenv('FIREFOX_BINARY')
 proxy_is_https = os.getenv('PROXY_IS_HTTPS')
+debug_wait = os.getenv('DEBUG_WAIT')
 
 def is_https():
     cf_https = request.headers.get('CF-Visitor') and 'https' in request.headers.get('CF-Visitor')
@@ -69,14 +74,14 @@ UBLOCK_RELEASES = 'https://github.com/gorhill/uBlock/releases'
 def check_ublock_xpi():
     if not os.path.exists(ublock_xpi):
         print("Downloading uBlock extension...")
-        r = requests.get(UBLOCK_RELEASES)
+        r = session.get(UBLOCK_RELEASES)
         if r.status_code/100 == 2:
             s = BeautifulSoup(r.text)
             for item in s.select('a'):
                 link = item.get('href')
                 if link.endswith('.firefox.signed.xpi'):
                     print("ublock.xpi link:", link)
-                    rx = requests.get(link)
+                    rx = session.get(link)
                     if rx.status_code/100 == 2:
                         with open(ublock_xpi, 'wb') as f:
                             f.write(rx.content)
@@ -112,7 +117,7 @@ def channels_json():
     channel_url = 'http://%s' % domain_raw
     if 'http' in domain_raw:
         channel_url = domain_raw
-    r = requests.get(channel_url, allow_redirects=True)
+    r = session.get(channel_url, allow_redirects=True)
 
     channels = []
     
@@ -124,8 +129,10 @@ def channels_json():
             cid = link[0].get('href')
             if cid:
                 cid = urlparse(cid)
-                if cid:
-                    cid = cid.path.replace('/', '')
+                if cid and cid.path.startswith('/'):
+                    cid = cid.path[1:]
+                if '/' in cid:
+                    cid = cid.replace('/', '%2F')
             name = link[0].text
         
         if cid and name:
@@ -138,7 +145,7 @@ def channels_json():
 
     channels.sort(key=lambda x: x['name'])
 
-    print('channels_json', channels)
+    print('channels_json', json.dumps(channels))
     return {"channels": channels}
 
 @app.route('/m3u8s/<path:streams>')
@@ -158,7 +165,7 @@ def m3u8s_route(streams):
 
             out[s] = m3u8s[s]
     
-    return out
+    return {k: v.url for k, v in out.items()}
 
 @app.route('/m3u8/<path:s>')
 def m3u8_route(s):
@@ -175,8 +182,8 @@ def m3u8_route(s):
 
     out[s] = m3u8s[s]
     
-    print('returning:', s)
-    return out
+    print('returning for', s, ':', out)
+    return {k: v.url for k, v in out.items()}
 
 def proxy_url_for(stream_id, url):
     u = urljoin(request.base_url, '/proxy_url?stream=%s&url=%s' % (stream_id, url))
@@ -195,6 +202,7 @@ def rewrite_m3u8(raw, url, stream_id):
             pu = proxy_url_for(stream_id, rawurl)
             allowed_proxy_domains.add(urlparse(rawurl).netloc)
             out.append(pu)
+    print('to:', out)
     return '\n'.join(out)
 
 @app.route('/allowed_proxy_domains')
@@ -212,6 +220,15 @@ def proxy_url_route():
         abort(404, description="no URL")
         return
     stream_id = url.split('&')[0].split('stream=')[1]
+
+    if stream_id not in m3u8s:
+        stream_id = stream_id.replace('/', '%2F')
+    
+    if stream_id not in m3u8s:
+        print("Unknown stream_id", stream_id, "m3u8s:", m3u8s)
+        abort(403, description="Unknown stream_id: %s" % stream_id)
+        return
+
     url = url.split('url=', 1)[1]
     proxy_domain = urlparse(url).netloc
     if proxy_domain not in allowed_proxy_domains:
@@ -220,15 +237,20 @@ def proxy_url_route():
         abort(403, description="Disallowed proxy domain: %s" % proxy_domain)
         return
 
-    r = requests.get(url, headers={'referer': 'http://%s' % domain})
+    referer = m3u8s[stream_id].referer or 'http://%s' % domain
+    print('using referer', referer)
+    r = session.get(url, headers={'referer': referer}, allow_redirects=True)
     ct = r.headers['content-type']
     if ct.lower() == 'application/vnd.apple.mpegurl':
-        print('Proxying m3u8 %s' % url)
+        print('Proxying m3u8', url, '>', r.url)
         proxied_m3u8_streams.labels(domain, stream_id, proxy_domain, is_https()).inc()
-        return Response(rewrite_m3u8(r.text, url, stream_id), mimetype=ct)
-    print('Proxying raw content %s' % url)
+        return Response(rewrite_m3u8(r.text, r.url, stream_id), mimetype=ct)
+    print('Proxying raw content', url, '>', r.url)
+    content = r.content
+    if r.status_code//100 != 2 or len(content) < 2:
+        print('status code:', r.status_code, content)
     proxied_m3u8_clips.labels(domain, stream_id, proxy_domain, is_https()).inc()
-    return Response(r.content, mimetype=ct)
+    return Response(content, mimetype=ct)
 
 @app.route('/m3u8_proxy/<path:s>')
 def m3u8_proxy_route(s):
@@ -240,10 +262,10 @@ def m3u8_proxy_route(s):
         with _get_m3u8_time.time():
             m3u8s[s] = get_m3u8(s)
 
-    r = requests.get(m3u8s[s], headers={'referer': 'http://%s' % domain})
+    r = session.get(m3u8s[s].url, headers={'referer': m3u8s[s].referer or 'http://%s' % domain}, allow_redirects=True)
     
     print('returning direct m3u8:', s)
-    return Response(rewrite_m3u8(r.text, m3u8s[s], s), mimetype=r.headers['content-type'])
+    return Response(rewrite_m3u8(r.text, m3u8s[s].url, s), mimetype=r.headers['content-type'])
 
 @app.route('/expire/<path:s>')
 def expire(s):
@@ -270,9 +292,29 @@ def expire_all():
 
     return 'deleted {}'.format(count)
 
+class M3u8Result:
+    def __init__(self, url=None, referer=None):
+        r = session.head(url)
+        if r and 'location' in r.headers:
+            url = r.headers['location']
+            print("M3u8Result rewrote url:", url)
+        self.url = url
+        self.referer = referer
+    
+    def __str__(self):
+        return "M3u8Result(url=%s, referer=%s)" % (self.url, self.referer)
+    
+    def __repr__(self):
+        return self.__str__()
+    
+    def json(self):
+        return {"url": self.url, "referer": self.referer}
+
 def get_m3u8(stream):
     opts = Options()
     opts.headless = True
+    if debug_wait:
+        opts.headless = False
     if firefox_binary:
         opts.binary_location = firefox_binary
 
@@ -385,20 +427,21 @@ def get_m3u8(stream):
         for f in url_attempts:
             url = f()
             if url:
-                return url
+                return M3u8Result(url, referer = driver_url)
 
         seq = driver.find_elements(By.TAG_NAME, 'iframe')
         for index in range(len(seq)):
             driver.switch_to.default_content()
             iframe = driver.find_elements(By.TAG_NAME, 'iframe')[index]
-            print('processing iframe %d' % index)
+            iframe_src = iframe.get_attribute('src')
+            print('processing iframe %d: %s' % (index, iframe_src))
             driver.switch_to.frame(iframe)
             try:    
 
                 for f in url_attempts:
                     url = f()
                     if url:
-                        return url
+                        return M3u8Result(url, referer = iframe_src)
 
             except Exception as e:
                 print('exception:', e)
@@ -408,16 +451,19 @@ def get_m3u8(stream):
                 driver.switch_to.default_content()
                 driver.switch_to.frame(iframe)
                 inner_iframe = driver.find_elements(By.TAG_NAME, 'iframe')[index2]
-                print('processing inner iframe %d' % index2)
+                inner_iframe_src = iframe.get_attribute('src')
+                print('processing inner iframe %d: %s' % (index2, inner_iframe_src))
                 driver.switch_to.frame(inner_iframe)
                 try:    
 
                     for f in url_attempts:
                         url = f()
                         if url:
-                            return url
+                            return M3u8Result(url, referer = inner_iframe_src)
 
                 except Exception as e:
                     print('exception:', e)
     finally:
+        if debug_wait:
+            time.sleep(600)
         driver.quit()
