@@ -165,7 +165,7 @@ def m3u8s_route(streams):
 
             out[s] = m3u8s[s]
     
-    return {k: v.url for k, v in out.items()}
+    return {k: v.json() for k, v in out.items()}
 
 @app.route('/m3u8/<path:s>')
 def m3u8_route(s):
@@ -183,7 +183,7 @@ def m3u8_route(s):
     out[s] = m3u8s[s]
     
     print('returning for', s, ':', out)
-    return {k: v.url for k, v in out.items()}
+    return {k: v.json() for k, v in out.items()}
 
 def proxy_url_for(stream_id, url):
     u = urljoin(request.base_url, '/proxy_url?stream=%s&url=%s' % (stream_id, url))

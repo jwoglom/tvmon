@@ -42,7 +42,7 @@ function render(r) {
         if (use_proxy) {
             var url = "/m3u8_proxy/" + v.id;
         } else {
-            var url = Object.values(r)[0];
+            var url = Object.values(r)[0].url;
         }
         play(v, url);
     }
