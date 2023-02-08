@@ -51,7 +51,10 @@ get_m3u8_time = Histogram('get_m3u8_time', 'Time to fetch a m3u8', ['domain', 's
 
 m3u8s = {}
 allowed_proxy_domains = TimedSet()
-domain = os.getenv('DOMAIN')
+domain_raw = os.getenv('DOMAIN')
+domain = domain_raw
+if 'http' in domain_raw:
+    domain = urlparse(domain_raw).netloc
 firefox_binary = os.getenv('FIREFOX_BINARY')
 proxy_is_https = os.getenv('PROXY_IS_HTTPS')
 
@@ -106,14 +109,15 @@ def channels():
 
 @app.route('/channels.json')
 def channels_json():
-    r = requests.get('http://%s' % domain, allow_redirects=True)
+    channel_url = 'http://%s' % domain_raw
+    if 'http' in domain_raw:
+        channel_url = domain_raw
+    r = requests.get(channel_url, allow_redirects=True)
 
     channels = []
     
     s = BeautifulSoup(r.text)
-    for item in s.select('ol li'):
-        print('channels_json item', item)
-        link = item.select('a')
+    def parse_link(link):
         cid = None
         name = None
         if link:
@@ -126,6 +130,13 @@ def channels_json():
         
         if cid and name:
             channels.append({"id": cid, "name": name})
+
+    for item in set(s.select('ol li')) | set(s.select('div.grid-item')):
+        print('channels_json li item', item)
+        link = item.select('a')
+        parse_link(link)
+
+    channels.sort(key=lambda x: x['name'])
 
     print('channels_json', channels)
     return {"channels": channels}
