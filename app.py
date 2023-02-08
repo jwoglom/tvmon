@@ -165,7 +165,7 @@ def m3u8s_route(streams):
 
             out[s] = m3u8s[s]
     
-    return {k: v.json() for k, v in out.items()}
+    return {k: v.json() if v else None for k, v in out.items()}
 
 @app.route('/m3u8/<path:s>')
 def m3u8_route(s):
@@ -183,7 +183,7 @@ def m3u8_route(s):
     out[s] = m3u8s[s]
     
     print('returning for', s, ':', out)
-    return {k: v.json() for k, v in out.items()}
+    return {k: v.json() if v else None for k, v in out.items()}
 
 def proxy_url_for(stream_id, url):
     u = urljoin(request.base_url, '/proxy_url?stream=%s&url=%s' % (stream_id, url))
@@ -261,6 +261,10 @@ def m3u8_proxy_route(s):
         _get_m3u8_time = get_m3u8_time.labels(domain, s)
         with _get_m3u8_time.time():
             m3u8s[s] = get_m3u8(s)
+    
+    if not m3u8s[s]:
+        abort(403, "no m3u8 able to be fetched")
+        return
 
     r = session.get(m3u8s[s].url, headers={'referer': m3u8s[s].referer or 'http://%s' % domain}, allow_redirects=True)
     
@@ -310,7 +314,25 @@ class M3u8Result:
     def json(self):
         return {"url": self.url, "referer": self.referer}
 
+currently_open_webdrivers = set()
 def get_m3u8(stream):
+    if stream in currently_open_webdrivers:
+        for i in range(60 * 4):
+            if stream not in currently_open_webdrivers:
+                time.sleep(0.1)
+                print("--got released lock on", stream)
+                return m3u8s.get(stream)
+            print("--waiting for lock on", stream)
+            time.sleep(0.25)
+        return None
+    currently_open_webdrivers.add(stream)
+    print(">>lock>>", stream)
+    ret = get_m3u8_nonthreadsafe(stream)
+    currently_open_webdrivers.remove(stream)
+    print("<<unlock<<", stream)
+    return ret
+
+def get_m3u8_nonthreadsafe(stream):
     opts = Options()
     opts.headless = True
     if debug_wait:
