@@ -96,7 +96,11 @@ function play(el, url) {
         lastTime = video.currentTime;
         timer = setTimeout(stallFunc, 10000);
     });
-    el.classList.add('muted');
+    if (views.length > 1) {
+        el.classList.add('muted');
+    } else {
+        el.muted = false;
+    }
     el.onclick = function() {
         document.querySelectorAll("video").forEach(function(el2) {
             if (el == el2 && el2.muted) {

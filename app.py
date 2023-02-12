@@ -112,8 +112,16 @@ def channels():
         return redirect('/%s?%s' % (pfx, ','.join(selected)))
     return render_template('channels.html', proxy=is_https())
 
+last_channels_json = None
+last_channels_json_time = None
 @app.route('/channels.json')
 def channels_json():
+    global last_channels_json, last_channels_json_time
+    if last_channels_json and time.time() - last_channels_json_time < 120:
+        return {"channels": last_channels_json}
+
+    print('uncached channels_json')
+
     channel_url = 'http://%s' % domain_raw
     if 'http' in domain_raw:
         channel_url = domain_raw
@@ -146,6 +154,8 @@ def channels_json():
     channels.sort(key=lambda x: x['name'])
 
     print('channels_json', json.dumps(channels))
+    last_channels_json = channels
+    last_channels_json_time = time.time()
     return {"channels": channels}
 
 @app.route('/m3u8s/<path:streams>')

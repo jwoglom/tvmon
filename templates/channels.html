@@ -7,8 +7,10 @@ window.onload = function() {
     fetch("/channels.json")
         .then(r => r.json())
         .then(r => {
+            console.log(r);
             var chans = document.querySelector("#channels");
             chans.innerHTML = '';
+            var nameToId = {};
             r["channels"].forEach(chan => {
                 var inp = document.createElement('input');
                 inp.type = 'checkbox';
@@ -18,10 +20,33 @@ window.onload = function() {
                 var sp = document.createElement('label');
                 sp.setAttribute('for', 'chan_' + chan.id);
                 sp.innerText = chan.name;
+                nameToId[chan.name] = chan.id;
                 chans.appendChild(inp);
                 chans.appendChild(sp);
                 chans.appendChild(document.createElement('br'));
             });
+
+            if (window.location.search.indexOf('?proxy') != -1 || window.location.search.indexOf('proxy&') != -1) {
+                document.getElementById('proxy').checked = true;
+            }
+
+
+            var opens = window.location.search.split('open=');
+                if (opens.length > 1) {
+                    opens = opens[1].split(',');
+                    opens.forEach(chan => {
+                        if (nameToId[unescape(chan)]) {
+                            var el = document.getElementById('chan_' + nameToId[unescape(chan)]);
+                            if (el) el.checked = true;
+                        } else {
+                            var el = document.getElementById('chan_' + chan);
+                            if (el) el.checked = true;
+                        }
+                    });
+                    setTimeout(function() {
+                        document.forms[0].submit();
+                    }, 100);
+                }
         });
 }
     </script>
