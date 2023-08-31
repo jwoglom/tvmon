@@ -23,8 +23,7 @@ import json
 import time
 import os, os.path
 
-session = requests.Session()
-session.headers.update({'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36'})
+cs = cloudscraper.create_scraper()
 
 class TimedSet(set):
     def __init__(self):
@@ -80,14 +79,14 @@ UBLOCK_RELEASES = 'https://github.com/gorhill/uBlock/releases'
 def check_ublock_xpi():
     if not os.path.exists(ublock_xpi):
         print("Downloading uBlock extension...")
-        r = session.get(UBLOCK_RELEASES)
+        r = cs.get(UBLOCK_RELEASES)
         if r.status_code/100 == 2:
             s = BeautifulSoup(r.text)
             for item in s.select('a'):
                 link = item.get('href')
                 if link.endswith('.firefox.signed.xpi'):
                     print("ublock.xpi link:", link)
-                    rx = session.get(link)
+                    rx = cs.get(link)
                     if rx.status_code/100 == 2:
                         with open(ublock_xpi, 'wb') as f:
                             f.write(rx.content)
@@ -131,7 +130,6 @@ def channels_json():
     channel_url = 'http://%s' % domain_raw
     if 'http' in domain_raw:
         channel_url = domain_raw
-    cs = cloudscraper.create_scraper()
     r = cs.get(channel_url, allow_redirects=True)
 
     channels = []
@@ -256,7 +254,7 @@ def proxy_url_route():
 
     referer = m3u8s[stream_id].referer or 'http://%s' % domain
     print('using referer', referer)
-    r = session.get(url, headers={'referer': referer}, allow_redirects=True)
+    r = cs.get(url, headers={'referer': referer}, allow_redirects=True)
     ct = r.headers['content-type']
     if ct.lower() == 'application/vnd.apple.mpegurl':
         print('Proxying m3u8', url, '>', r.url)
@@ -283,7 +281,7 @@ def m3u8_proxy_route(s):
         abort(403, "no m3u8 able to be fetched")
         return
 
-    r = session.get(m3u8s[s].url, headers={'referer': m3u8s[s].referer or 'http://%s' % domain}, allow_redirects=True)
+    r = cs.get(m3u8s[s].url, headers={'referer': m3u8s[s].referer or 'http://%s' % domain}, allow_redirects=True)
     
     print('returning direct m3u8:', s)
     return Response(rewrite_m3u8(r.text, m3u8s[s].url, s), mimetype=r.headers['content-type'])
@@ -315,7 +313,7 @@ def expire_all():
 
 class M3u8Result:
     def __init__(self, url=None, referer=None):
-        r = session.head(url)
+        r = cs.head(url)
         if r and 'location' in r.headers:
             url = r.headers['location']
             print("M3u8Result rewrote url:", url)
