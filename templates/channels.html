@@ -4,6 +4,7 @@
     <title>TVMon</title>
     <script>
 window.onload = function() {
+    document.querySelector("input[name='filter']").focus();
     fetch("/channels.json")
         .then(r => r.json())
         .then(r => {
@@ -12,6 +13,10 @@ window.onload = function() {
             chans.innerHTML = '';
             var nameToId = {};
             r["channels"].forEach(chan => {
+                var div = document.createElement('div');
+                div.classList.add('channel-div');
+                div.setAttribute('data-name', chan.name);
+
                 var inp = document.createElement('input');
                 inp.type = 'checkbox';
                 inp.name = 'channel';
@@ -21,9 +26,10 @@ window.onload = function() {
                 sp.setAttribute('for', 'chan_' + chan.id);
                 sp.innerText = chan.name;
                 nameToId[chan.name] = chan.id;
-                chans.appendChild(inp);
-                chans.appendChild(sp);
-                chans.appendChild(document.createElement('br'));
+                div.appendChild(inp);
+                div.appendChild(sp);
+                div.appendChild(document.createElement('br'));
+                chans.appendChild(div);
             });
 
             if (window.location.search.indexOf('?proxy') != -1 || window.location.search.indexOf('proxy&') != -1) {
@@ -49,10 +55,23 @@ window.onload = function() {
                 }
         });
 }
+
+updateFilter = function(q) {
+    document.querySelectorAll("div.channel-div").forEach(el => {
+        var name = el.getAttribute('data-name');
+        if (!q || name.toLowerCase().indexOf(q.toLowerCase()) != -1) {
+            el.style.display = '';
+        } else {
+            el.style.display = 'none';
+        }
+    })
+}
     </script>
 </head>
 <body>
     <h1>Channels</h1>
+    <br />
+    Filter: <input type="text" name="filter" width="500" onchange="updateFilter(this.value)" onkeyup="updateFilter(this.value)" />
     <form action="" method="get">
         <div id="channels">Loading...</div>
 

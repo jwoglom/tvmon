@@ -56,11 +56,16 @@ get_m3u8_time = Histogram('get_m3u8_time', 'Time to fetch a m3u8', ['domain', 's
 m3u8s = {}
 allowed_proxy_domains = TimedSet()
 domain_raw = os.getenv('DOMAIN')
+if not domain_raw:
+    print("No DOMAIN environment variable")
+    exit(1)
+
 domain = domain_raw
-if 'http' in domain_raw:
+if domain_raw and 'http' in domain_raw:
     domain = urlparse(domain_raw).netloc
 firefox_binary = os.getenv('FIREFOX_BINARY')
 proxy_is_https = os.getenv('PROXY_IS_HTTPS')
+proxy_default = os.getenv('PROXY_DEFAULT', '') == 'true'
 debug_wait = os.getenv('DEBUG_WAIT')
 
 def is_https():
@@ -110,7 +115,7 @@ def channels():
         print('selected:', selected)
         pfx = 'proxy' if request.args.get('proxy') else ''
         return redirect('/%s?%s' % (pfx, ','.join(selected)))
-    return render_template('channels.html', proxy=is_https())
+    return render_template('channels.html', proxy=is_https() or proxy_default)
 
 last_channels_json = None
 last_channels_json_time = None
