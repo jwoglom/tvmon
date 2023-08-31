@@ -1,5 +1,5 @@
 flask
-selenium
+selenium==4.9.0
 bs4
 requests
 prometheus-flask-exporter
