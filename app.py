@@ -16,6 +16,7 @@ from selenium.webdriver.common.by import By
 from bs4 import BeautifulSoup
 
 import requests
+import cloudscraper
 from urllib.parse import urljoin, urlparse
 
 import json
@@ -130,7 +131,8 @@ def channels_json():
     channel_url = 'http://%s' % domain_raw
     if 'http' in domain_raw:
         channel_url = domain_raw
-    r = session.get(channel_url, allow_redirects=True)
+    cs = cloudscraper.create_scraper()
+    r = cs.get(channel_url, allow_redirects=True)
 
     channels = []
     
@@ -151,7 +153,7 @@ def channels_json():
         if cid and name:
             channels.append({"id": cid, "name": name})
 
-    for item in set(s.select('ol li')) | set(s.select('div.grid-item')):
+    for item in set(s.select('ol li')) | set(s.select('div.grid-item')) | set(s.select('.grid-items .element')):
         print('channels_json li item', item)
         link = item.select('a')
         parse_link(link)
