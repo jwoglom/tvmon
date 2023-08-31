@@ -8,7 +8,7 @@ COPY templates/channels.html /templates/
 
 RUN apt-get update
 RUN apt-get install -y python3 python3-pip python3-flask python3-bs4 python3-requests
-RUN python3 -m pip install -r requirements.txt
+RUN python3 -m pip install -r requirements.txt --break-system-packages
 
 EXPOSE 4444
 EXPOSE 5000
