@@ -151,10 +151,16 @@ def channels_json():
         if cid and name:
             channels.append({"id": cid, "name": name})
 
-    for item in set(s.select('ol li')) | set(s.select('div.grid-item')) | set(s.select('.grid-items .element')):
+    for item in set(s.select('ol li')) | set(s.select('div.grid-item')) | set(s.select('.grid-items .element')) | set(s.select('.btn.btn-lg')):
         print('channels_json li item', item)
         link = item.select('a')
         parse_link(link)
+
+    if not channels:
+        for item in set(s.select('table tbody tr td')):
+            print('channels_json li item', item)
+            link = item.select('a')
+            parse_link(link)
 
     channels.sort(key=lambda x: x['name'])
 
@@ -375,15 +381,17 @@ def get_m3u8_nonthreadsafe(stream):
         print(e)
 
     def click_play_button():
-        try:
-            play_button = driver.find_element(By.CSS_SELECTOR, ".stream-single-center-message-box > span")
-            if play_button:
-                WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.CSS_SELECTOR, '.stream-single-center-message-box > span')))
-                play_button.click()
-                print("clicked play button")
-                time.sleep(1)
-        except NoSuchElementException:
-            print("no play button")
+        play_button_selectors = ["#opalayer", ".stream-single-center-message-box > span", ".jw-icon.jw-icon-display"]
+        for selector in play_button_selectors:
+            try:
+                play_button = driver.find_element(By.CSS_SELECTOR, selector)
+                if play_button:
+                    WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.CSS_SELECTOR, selector)))
+                    play_button.click()
+                    print("clicked play button:", selector)
+                    time.sleep(1)
+            except NoSuchElementException:
+                print("no play button:", selector)
 
     def get_jwplayer_url():
         try:
