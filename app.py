@@ -216,7 +216,7 @@ def proxy_url_for(stream_id, url):
 def rewrite_m3u8(raw, url, stream_id):
     out = []
     for line in raw.splitlines():
-        if line.startswith('#') or line.startswith('http'):
+        if line.startswith('#') or not line.startswith('http'):
             out.append(line)
         else:
             rawurl = urljoin(url, line)
@@ -321,8 +321,10 @@ class M3u8Result:
     def __init__(self, url=None, referer=None):
         r = cs.head(url)
         if r and 'location' in r.headers:
-            url = r.headers['location']
-            print("M3u8Result rewrote url:", url)
+            loc = r.headers['location']
+            if len(urlparse(loc).path) > 2:
+                url = loc
+                print("M3u8Result rewrote url:", url)
         self.url = url
         self.referer = referer
     
@@ -386,8 +388,11 @@ def get_m3u8_nonthreadsafe(stream):
             try:
                 play_button = driver.find_element(By.CSS_SELECTOR, selector)
                 if play_button:
-                    WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.CSS_SELECTOR, selector)))
-                    play_button.click()
+                    print("waiting for play button:", selector)
+                    #WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.CSS_SELECTOR, selector)))
+                    #play_button.click()
+                    driver.execute_script("var elem=arguments[0]; setTimeout(function() {elem.click();}, 100)", play_button)
+                    time.sleep(0.2)
                     print("clicked play button:", selector)
                     time.sleep(1)
             except NoSuchElementException:
@@ -466,6 +471,8 @@ def get_m3u8_nonthreadsafe(stream):
     try:
         driver.get(driver_url)
         print("Page loaded: %s" % driver_url)
+
+        time.sleep(3)
 
         click_play_button()
 
