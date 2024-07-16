@@ -17,7 +17,7 @@ from bs4 import BeautifulSoup
 
 import requests
 import cloudscraper
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, quote
 
 import json
 import time
@@ -207,7 +207,7 @@ def m3u8_route(s):
     return {k: v.json() if v else None for k, v in out.items()}
 
 def proxy_url_for(stream_id, url):
-    u = urljoin(request.base_url, '/proxy_url?stream=%s&url=%s' % (stream_id, url))
+    u = urljoin(request.base_url, '/proxy_url?stream=%s&url=%s' % (stream_id, quote(url)))
     
     if is_https() and u.startswith('http://'):
         u = 'https://' + u[len('http://'):]
