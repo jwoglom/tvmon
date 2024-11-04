@@ -17,7 +17,7 @@ from bs4 import BeautifulSoup
 
 import requests
 import cloudscraper
-from urllib.parse import urljoin, urlparse, quote
+from urllib.parse import urljoin, urlparse, quote, unquote
 
 import json
 import time
@@ -67,6 +67,7 @@ firefox_binary = os.getenv('FIREFOX_BINARY')
 proxy_is_https = os.getenv('PROXY_IS_HTTPS')
 proxy_default = os.getenv('PROXY_DEFAULT', '') == 'true'
 debug_wait = os.getenv('DEBUG_WAIT')
+debug_nonheadless = os.getenv('DEBUG_NOHEADLESS')
 
 def is_https():
     cf_https = request.headers.get('CF-Visitor') and 'https' in request.headers.get('CF-Visitor')
@@ -216,7 +217,14 @@ def proxy_url_for(stream_id, url):
 def rewrite_m3u8(raw, url, stream_id):
     out = []
     for line in raw.splitlines():
-        if line.startswith('#') or not line.startswith('http'):
+        if line.startswith('#EXT-X-KEY') and 'URI="' in line:
+            _bef, _med = line.split('URI="', 1)
+            _uri, _aft = _med.split('"', 1)
+            rawurl = urljoin(url, _uri)
+            pu = proxy_url_for(stream_id, rawurl)
+            allowed_proxy_domains.add(urlparse(rawurl).netloc)
+            out.append(_bef + 'URI="' + pu + '"' + _aft)
+        elif line.startswith('#') or not line.startswith('http'):
             out.append(line)
         else:
             rawurl = urljoin(url, line)
@@ -251,18 +259,21 @@ def proxy_url_route():
         return
 
     url = url.split('url=', 1)[1]
-    proxy_domain = urlparse(url).netloc
+    if '%' in url:
+        url = unquote(url)
+    url_parsed = urlparse(url)
+    proxy_domain = url_parsed.netloc
     if proxy_domain not in allowed_proxy_domains:
         print("Disallowed proxy domain domain:", proxy_domain, "url:", url)
         invalid_proxy_domains.labels(domain, stream_id, proxy_domain, is_https()).inc()
-        abort(403, description="Disallowed proxy domain: %s" % proxy_domain)
+        abort(403, description="Disallowed proxy domain: %s (url=%s)" % (proxy_domain, url))
         return
 
     referer = m3u8s[stream_id].referer or 'http://%s' % domain
     print('using referer', referer)
     r = cs.get(url, headers={'referer': referer}, allow_redirects=True)
     ct = r.headers['content-type']
-    if ct.lower() == 'application/vnd.apple.mpegurl':
+    if ct.lower() == 'application/vnd.apple.mpegurl' or url_parsed.path.endswith('.m3u8'):
         print('Proxying m3u8', url, '>', r.url)
         proxied_m3u8_streams.labels(domain, stream_id, proxy_domain, is_https()).inc()
         return Response(rewrite_m3u8(r.text, r.url, stream_id), mimetype=ct)
@@ -359,6 +370,8 @@ def get_m3u8_nonthreadsafe(stream):
     opts = Options()
     opts.headless = True
     if debug_wait:
+        opts.headless = False
+    if debug_nonheadless:
         opts.headless = False
     if firefox_binary:
         opts.binary_location = firefox_binary
@@ -516,6 +529,8 @@ def get_m3u8_nonthreadsafe(stream):
                 except Exception as e:
                     print('exception:', e)
     finally:
+        print('get_m3u8 DONE')
         if debug_wait:
+            print('DEBUG_WAIT')
             time.sleep(600)
         driver.quit()
