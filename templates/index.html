@@ -59,6 +59,12 @@ function play(el, url) {
         hls.on(Hls.Events.MEDIA_ATTACHED, function() {
             video.muted = true;
             video.play();
+            try {
+                if (views.length > 1) {
+                    video.muted = false;
+                    video.play();
+                }
+            } catch (e) {console.warn(e);}
         });
     }
     else if (video.canPlayType('application/vnd.apple.mpegurl')) {
@@ -68,10 +74,22 @@ function play(el, url) {
         });
     }
     var timer = null;
+    var expireTimer = null;
     var lastTime = 0;
     var stallFunc = function() {
         if (!video.paused && video.currentTime == lastTime) {
             console.warn("STALLED "+el.id);
+            var oldsrc = ''+video.src;
+            video.src = '';
+            setTimeout(function() {
+                video.src = oldsrc;
+            }, 500);
+        }
+    }
+
+    var expireFunc = function() {
+        if (!video.paused && video.currentTime == lastTime) {
+            console.warn("EXPIRE STALLED "+el.id);
             fetch("/expire/" + el.id)
                 .then(r1 => r1.text())
                 .then(r1 => {
@@ -93,8 +111,10 @@ function play(el, url) {
     }
     video.addEventListener("timeupdate", function() {
         clearTimeout(timer);
+        clearTimeout(expireTimer);
         lastTime = video.currentTime;
-        timer = setTimeout(stallFunc, 10000);
+        timer = setTimeout(stallFunc, 6000);
+        expireTimer = setTimeout(expireFunc, 30000);
     });
     if (views.length > 1) {
         el.classList.add('muted');

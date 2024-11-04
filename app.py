@@ -63,6 +63,8 @@ if not domain_raw:
     print("No DOMAIN environment variable")
     exit(1)
 
+referer_header = os.getenv('REFERER_HEADER')
+
 domain = domain_raw
 if domain_raw and 'http' in domain_raw:
     domain = urlparse(domain_raw).netloc
@@ -273,7 +275,7 @@ def proxy_url_route():
         abort(403, description="Disallowed proxy domain: %s (url=%s)" % (proxy_domain, url))
         return
 
-    referer = m3u8s[stream_id].referer or 'http://%s' % domain
+    referer = referer_header or m3u8s[stream_id].referer or 'http://%s' % domain
     print('using referer', referer)
     url_domain = url_parsed.netloc
     base_url_domain = url_domain[url_domain.index('.')+1:]
@@ -308,7 +310,7 @@ def m3u8_proxy_route(s):
     url_domain = urlparse(m3u8s[s].url).netloc
     base_url_domain = url_domain[url_domain.index('.')+1:]
 
-    r = cs.get(m3u8s[s].url, headers={'referer': m3u8s[s].referer or 'http://%s' % domain, **dict(saved_headers_for_domain[base_url_domain]), **dict(saved_headers_for_domain[url_domain])}, allow_redirects=True)
+    r = cs.get(m3u8s[s].url, headers={'referer': referer_header or m3u8s[s].referer or 'http://%s' % domain, **dict(saved_headers_for_domain[base_url_domain]), **dict(saved_headers_for_domain[url_domain])}, allow_redirects=True)
     
     print('returning direct m3u8:', s)
     return Response(rewrite_m3u8(r.text, m3u8s[s].url, s), mimetype=r.headers['content-type'])
@@ -373,7 +375,7 @@ def save_cookies(reqs):
         base_host = host[host.index('.')+1:]
         for k in req.headers.keys():
             v = req.headers[k]
-            if k.lower() in ('referer', 'origin'):
+            if (not referer_header and k.lower() == 'referer') or k.lower() == 'origin':
                 saved_headers_for_domain[host].append([k.lower(), v])
                 saved_headers_for_domain[base_host].append([k.lower(), v])
 
@@ -396,7 +398,8 @@ def get_m3u8(stream):
                 time.sleep(0.1)
                 print("--got released lock on", stream)
                 return m3u8s.get(stream)
-            print("--waiting for lock on", stream)
+            if i%10 == 0:
+                print("--waiting for lock on", stream)
             time.sleep(0.25)
         return None
     currently_open_webdrivers.add(stream)
@@ -575,7 +578,7 @@ def get_m3u8_nonthreadsafe(stream):
             print('DEBUG_WAIT')
             time.sleep(600)
         else:
-            time.sleep(5)
+            time.sleep(3)
         save_cookies(driver.requests)
         print('logged requests')
         if debug_pickle:
