@@ -1,0 +1,19 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+flask = "*"
+selenium = "4.8.0"
+bs4 = "*"
+requests = "*"
+prometheus-flask-exporter = "*"
+cloudscraper = "*"
+selenium-wire = "*"
+blinker = "==1.7.0"
+
+[dev-packages]
+
+[scripts]
+tvmon = "python3 -m flask run --host 0.0.0.0 --port 5001"

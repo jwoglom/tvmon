@@ -6,7 +6,8 @@ from flask import Flask, render_template, Response, request, abort, redirect
 from prometheus_flask_exporter import PrometheusMetrics
 from prometheus_client import Counter, Histogram
 
-from selenium.webdriver import Firefox, FirefoxProfile
+from seleniumwire.webdriver import Firefox
+from selenium.webdriver import FirefoxProfile
 from selenium.webdriver.firefox.options import Options
 from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.support import expected_conditions as EC
@@ -19,8 +20,10 @@ import requests
 import cloudscraper
 from urllib.parse import urljoin, urlparse, quote, unquote
 
+import pickle
 import json
 import time
+import collections
 import os, os.path
 
 cs = cloudscraper.create_scraper()
@@ -68,6 +71,7 @@ proxy_is_https = os.getenv('PROXY_IS_HTTPS')
 proxy_default = os.getenv('PROXY_DEFAULT', '') == 'true'
 debug_wait = os.getenv('DEBUG_WAIT')
 debug_nonheadless = os.getenv('DEBUG_NOHEADLESS')
+debug_pickle = os.getenv('DEBUG_PICKLE')
 
 def is_https():
     cf_https = request.headers.get('CF-Visitor') and 'https' in request.headers.get('CF-Visitor')
@@ -271,7 +275,10 @@ def proxy_url_route():
 
     referer = m3u8s[stream_id].referer or 'http://%s' % domain
     print('using referer', referer)
-    r = cs.get(url, headers={'referer': referer}, allow_redirects=True)
+    url_domain = url_parsed.netloc
+    base_url_domain = url_domain[url_domain.index('.')+1:]
+
+    r = cs.get(url, headers={'referer': referer, **dict(saved_headers_for_domain[base_url_domain]), **dict(saved_headers_for_domain[url_domain])}, allow_redirects=True)
     ct = r.headers['content-type']
     if ct.lower() == 'application/vnd.apple.mpegurl' or url_parsed.path.endswith('.m3u8'):
         print('Proxying m3u8', url, '>', r.url)
@@ -298,7 +305,10 @@ def m3u8_proxy_route(s):
         abort(403, "no m3u8 able to be fetched")
         return
 
-    r = cs.get(m3u8s[s].url, headers={'referer': m3u8s[s].referer or 'http://%s' % domain}, allow_redirects=True)
+    url_domain = urlparse(m3u8s[s].url).netloc
+    base_url_domain = url_domain[url_domain.index('.')+1:]
+
+    r = cs.get(m3u8s[s].url, headers={'referer': m3u8s[s].referer or 'http://%s' % domain, **dict(saved_headers_for_domain[base_url_domain]), **dict(saved_headers_for_domain[url_domain])}, allow_redirects=True)
     
     print('returning direct m3u8:', s)
     return Response(rewrite_m3u8(r.text, m3u8s[s].url, s), mimetype=r.headers['content-type'])
@@ -326,6 +336,7 @@ def expire_all():
         print('deleted', s)
         count += 1
 
+    clear_saved_headers_for_domain()
     return 'deleted {}'.format(count)
 
 class M3u8Result:
@@ -347,6 +358,35 @@ class M3u8Result:
     
     def json(self):
         return {"url": self.url, "referer": self.referer}
+
+
+saved_headers_for_domain = collections.defaultdict(list)
+def clear_saved_headers_for_domain():
+    global saved_headers_for_domain
+    saved_headers_for_domain = collections.defaultdict(list)
+
+def save_cookies(reqs):
+    global saved_headers_for_domain
+    for req in reqs:
+        print('req:', req)
+        host = urlparse(req.url).netloc
+        base_host = host[host.index('.')+1:]
+        for k in req.headers.keys():
+            v = req.headers[k]
+            if k.lower() in ('referer', 'origin'):
+                saved_headers_for_domain[host].append([k.lower(), v])
+                saved_headers_for_domain[base_host].append([k.lower(), v])
+
+        res = req.response
+        if res:
+            print('res:', res, list(res.headers))
+            for k in res.headers.keys():
+                v = res.headers[k]
+                if k.lower() == 'set-cookie':
+                    saved_headers_for_domain[host].append(['cookie', v.split(';')[0]])
+                    saved_headers_for_domain[base_host].append(['cookie', v.split(';')[0]])
+    print('saved_headers_for_domain:', json.dumps(saved_headers_for_domain))
+
 
 currently_open_webdrivers = set()
 def get_m3u8(stream):
@@ -394,6 +434,7 @@ def get_m3u8_nonthreadsafe(stream):
         print("Done installing")
     except Exception as e:
         print(e)
+    
 
     def click_play_button():
         play_button_selectors = ["#opalayer", ".stream-single-center-message-box > span", ".jw-icon.jw-icon-display"]
@@ -529,8 +570,14 @@ def get_m3u8_nonthreadsafe(stream):
                 except Exception as e:
                     print('exception:', e)
     finally:
-        print('get_m3u8 DONE')
+        print('get_m3u8 DONE_WAIT')
         if debug_wait:
             print('DEBUG_WAIT')
             time.sleep(600)
+        else:
+            time.sleep(5)
+        save_cookies(driver.requests)
+        print('logged requests')
+        if debug_pickle:
+            pickle.dump(driver.requests, open('requests_out.pickle', 'wb'))
         driver.quit()
