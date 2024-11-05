@@ -6,3 +6,4 @@ prometheus-flask-exporter
 cloudscraper
 selenium-wire
 blinker==1.7.0
+flask-cors

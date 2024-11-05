@@ -2,6 +2,7 @@
 import os, time
 
 from flask import Flask, render_template, Response, request, abort, redirect
+from flask_cors import CORS
 
 from prometheus_flask_exporter import PrometheusMetrics
 from prometheus_client import Counter, Histogram
@@ -49,6 +50,7 @@ class TimedSet(set):
                 yield item
 
 app = Flask(__name__)
+CORS(app)
 metrics = PrometheusMetrics(app)
 
 requested_m3u8_streams = Counter('requested_m3u8_streams', 'Requested m3u8 streams', ['domain', 'stream', 'https'])
