@@ -20,7 +20,9 @@ import requests
 import cloudscraper
 from urllib.parse import urljoin, urlparse, quote, unquote
 
+import unicodedata
 import pickle
+import re
 import json
 import time
 import collections
@@ -62,6 +64,8 @@ domain_raw = os.getenv('DOMAIN')
 if not domain_raw:
     print("No DOMAIN environment variable")
     exit(1)
+
+DOMAIN_IS_M3U8 = domain_raw.endswith('.m3u8')
 
 referer_header = os.getenv('REFERER_HEADER')
 
@@ -107,6 +111,16 @@ def check_ublock_xpi():
 
 check_ublock_xpi()
 
+def slugify(value):
+    value = str(value)
+    value = (
+        unicodedata.normalize("NFKD", value)
+        .encode("ascii", "ignore")
+        .decode("ascii")
+    )
+    value = re.sub(r"[^\w\s-]", "", value.lower())
+    return re.sub(r"[-\s]+", "-", value).strip("-_")
+
 @app.route('/')
 def index():
     return render_template('index.html', proxy="false")
@@ -128,53 +142,118 @@ last_channels_json = None
 last_channels_json_time = None
 @app.route('/channels.json')
 def channels_json():
+    return {'channels': get_or_build_channels()}
+
+def get_or_build_channels():
     global last_channels_json, last_channels_json_time
     if last_channels_json and time.time() - last_channels_json_time < 120:
-        return {"channels": last_channels_json}
+        return last_channels_json
 
     print('uncached channels_json')
+    channels = build_channels()
+    print('channels_json', json.dumps(channels))
+    last_channels_json = channels
+    last_channels_json_time = time.time()
+    return channels
 
+
+def build_channels():
     channel_url = 'http://%s' % domain_raw
     if 'http' in domain_raw:
         channel_url = domain_raw
+    
     r = cs.get(channel_url, allow_redirects=True)
 
-    channels = []
-    
-    s = BeautifulSoup(r.text)
-    def parse_link(link):
-        cid = None
-        name = None
-        if link:
-            cid = link[0].get('href')
-            if cid:
-                cid = urlparse(cid)
-                if cid and cid.path.startswith('/'):
-                    cid = cid.path[1:]
-                if '/' in cid:
-                    cid = cid.replace('/', '%2F')
-            name = link[0].text
+    def parse_bsoup():
+        channels = []
         
-        if cid and name:
-            channels.append({"id": cid, "name": name})
+        s = BeautifulSoup(r.text)
+        def parse_link(link):
+            cid = None
+            name = None
+            if link:
+                cid = link[0].get('href')
+                if cid:
+                    cid = urlparse(cid)
+                    if cid and cid.path.startswith('/'):
+                        cid = cid.path[1:]
+                    if '/' in cid:
+                        cid = cid.replace('/', '%2F')
+                name = link[0].text
+            
+            if cid and name:
+                channels.append({"id": cid, "name": name})
 
-    for item in set(s.select('ol li')) | set(s.select('div.grid-item')) | set(s.select('.grid-items .element')) | set(s.select('.btn.btn-lg')):
-        print('channels_json li item', item)
-        link = item.select('a')
-        parse_link(link)
-
-    if not channels:
-        for item in set(s.select('table tbody tr td')):
+        for item in set(s.select('ol li')) | set(s.select('div.grid-item')) | set(s.select('.grid-items .element')) | set(s.select('.btn.btn-lg')):
             print('channels_json li item', item)
             link = item.select('a')
             parse_link(link)
 
-    channels.sort(key=lambda x: x['name'])
+        if not channels:
+            for item in set(s.select('table tbody tr td')):
+                print('channels_json li item', item)
+                link = item.select('a')
+                parse_link(link)
 
-    print('channels_json', json.dumps(channels))
-    last_channels_json = channels
-    last_channels_json_time = time.time()
-    return {"channels": channels}
+        channels.sort(key=lambda x: x['name'])
+        return channels
+
+    def parse_kv_pairs(line):
+        pattern = r'(\S+?)=(?:"([^"]*)"|(\S+))'
+        matches = re.findall(pattern, line)
+        if not matches:
+            return {}
+
+        parsed_data = {key: (val1 if val1 else val2) for key, val1, val2 in matches}
+
+        return parsed_data
+
+    def get_playlist_metadata(playlists):
+        groups = collections.defaultdict(list)
+        meta = []
+        for plines in playlists:
+            met = {}
+            kv = parse_kv_pairs(plines[0].split(' ',1)[1])
+            met.update(kv)
+            for l in plines[1:]:
+                if l.startswith('#EXTVLCOPT:'):
+                    kv2 = parse_kv_pairs(l[len('#EXTVLCOPT:'):])
+                    if kv2:
+                        met.update(kv2)
+                elif l.startswith('http'):
+                    met['raw_url'] = l
+
+            meta.append(met)
+
+            if 'group-title' in met:
+                groups[met['group-title']].append(met)
+        
+
+
+        return meta, groups
+
+    def parse_m3u8file():
+        playlists = []
+        tmp = []
+        for line in r.text.splitlines():
+            if line and line.startswith('#EXTM3U'):
+                continue
+            if line:
+                tmp.append(line)
+            else:
+                playlists.append(tmp)
+                tmp = []
+        playlists.append(tmp)
+
+        return [{'id': slugify(p['tvg-id']), 'name': p['tvg-name'], **p} for p in get_playlist_metadata(playlists)[0]]
+
+
+    if DOMAIN_IS_M3U8:
+        channels = parse_m3u8file()
+    else:
+        channels = parse_bsoup()
+
+    return channels
 
 @app.route('/m3u8s/<path:streams>')
 def m3u8s_route(streams):
@@ -295,6 +374,8 @@ def proxy_url_route():
 
 @app.route('/m3u8_proxy/<path:s>')
 def m3u8_proxy_route(s):
+    if s.endswith('.m3u8'):
+        s = s[:-5]
     print('stream:', s)
 
     proxied_m3u8_streams.labels(domain, s, '', is_https()).inc()
@@ -410,6 +491,40 @@ def get_m3u8(stream):
     return ret
 
 def get_m3u8_nonthreadsafe(stream):
+    if DOMAIN_IS_M3U8:
+        return get_m3u8_nonthreadsafe_domainm3u8(stream)
+    else:
+        return get_m3u8_nonthreadsafe_webdriver(stream)
+
+def get_m3u8_nonthreadsafe_domainm3u8(stream):
+    spec = None
+    for item in get_or_build_channels():
+        if stream == item['id']:
+            spec = item
+            break
+    if not spec:
+        return None
+    
+    host = urlparse(spec['raw_url']).netloc
+    base_host = host[host.index('.')+1:]
+    if 'http-referrer' in spec:
+        saved_headers_for_domain[host].append(['referer', spec.get('http-referrer')])
+        saved_headers_for_domain[base_host].append(['referer', spec.get('http-referrer')])
+
+        allowed_proxy_domains.add(urlparse(spec.get('http-referrer')).netloc)
+    if 'http-origin' in spec:
+        saved_headers_for_domain[host].append(['origin', spec.get('http-origin')])
+        saved_headers_for_domain[base_host].append(['origin', spec.get('http-origin')])
+
+        allowed_proxy_domains.add(urlparse(spec.get('http-origin')).netloc)
+    if 'http-user-agent' in spec:
+        saved_headers_for_domain[host].append(['user-agent', spec.get('http-user-agent')])
+        saved_headers_for_domain[base_host].append(['user-agent', spec.get('http-user-agent')])
+
+    
+    return M3u8Result(url=spec['raw_url'], referer=spec.get('http-referrer'))
+
+def get_m3u8_nonthreadsafe_webdriver(stream):
     opts = Options()
     opts.headless = True
     if debug_wait:
