@@ -28,6 +28,8 @@ import json
 import time
 import collections
 import os, os.path
+import socket
+socket.setdefaulttimeout(10)
 
 cs = cloudscraper.create_scraper()
 
@@ -247,7 +249,7 @@ def build_channels():
                 tmp = []
         playlists.append(tmp)
 
-        return [{'id': slugify(p['tvg-id']), 'name': p['tvg-name'], **p} for p in get_playlist_metadata(playlists)[0]]
+        return [{'id': slugify(p['tvg-id']) if slugify(p['tvg-id']) != 'no-tvg-id' else slugify(p['tvg-name']), 'name': p['tvg-name'], **p} for p in get_playlist_metadata(playlists)[0]]
 
 
     if DOMAIN_IS_M3U8:
@@ -361,18 +363,21 @@ def proxy_url_route():
     url_domain = url_parsed.netloc
     base_url_domain = url_domain[url_domain.index('.')+1:]
 
-    r = cs.get(url, headers={'referer': referer, **dict(saved_headers_for_domain[base_url_domain]), **dict(saved_headers_for_domain[url_domain])}, allow_redirects=True)
-    ct = r.headers['content-type']
+    r = cs.get(url, headers={'referer': referer, **dict(saved_headers_for_domain[urlparse(m3u8s[stream_id].url).netloc]), **dict(saved_headers_for_domain[base_url_domain]), **dict(saved_headers_for_domain[url_domain])}, allow_redirects=True, timeout=5)
+    ct = r.headers.get('content-type', 'application/octet-stream')
     if ct.lower() == 'application/vnd.apple.mpegurl' or url_parsed.path.endswith('.m3u8'):
         print('Proxying m3u8', url, '>', r.url)
         proxied_m3u8_streams.labels(domain, stream_id, proxy_domain, is_https()).inc()
         return Response(rewrite_m3u8(r.text, r.url, stream_id), mimetype=ct)
     print('Proxying raw content', url, '>', r.url)
-    content = r.content
-    if r.status_code//100 != 2 or len(content) < 2:
-        print('status code:', r.status_code, content)
+    if r.status_code//100 != 2:
+        print('status code:', r.status_code)
     proxied_m3u8_clips.labels(domain, stream_id, proxy_domain, is_https()).inc()
-    return Response(content, mimetype=ct)
+
+    def chunk_content():
+        for chunk in r.iter_content(chunk_size=8192):
+            yield chunk
+    return Response(chunk_content(), mimetype=ct)
 
 @app.route('/m3u8_proxy/<path:s>')
 def m3u8_proxy_route(s):
@@ -393,7 +398,7 @@ def m3u8_proxy_route(s):
     url_domain = urlparse(m3u8s[s].url).netloc
     base_url_domain = url_domain[url_domain.index('.')+1:]
 
-    r = cs.get(m3u8s[s].url, headers={'referer': referer_header or m3u8s[s].referer or 'http://%s' % domain, **dict(saved_headers_for_domain[base_url_domain]), **dict(saved_headers_for_domain[url_domain])}, allow_redirects=True)
+    r = cs.get(m3u8s[s].url, headers={'referer': referer_header or m3u8s[s].referer or 'http://%s' % domain, **dict(saved_headers_for_domain[urlparse(m3u8s[s].url).netloc]), **dict(saved_headers_for_domain[base_url_domain]), **dict(saved_headers_for_domain[url_domain])}, allow_redirects=True, timeout=5)
     
     print('returning direct m3u8:', s)
     return Response(rewrite_m3u8(r.text, m3u8s[s].url, s), mimetype=r.headers['content-type'])

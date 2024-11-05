@@ -16,7 +16,7 @@ video {
     cursor: pointer;
 }
 video.muted {
-    opacity: 0.75;
+    /*opacity: 0.75;*/
 }
 video.expanded {
     position: absolute;
@@ -34,6 +34,8 @@ var use_proxy = {{ proxy }};
 
 function render(r) {
     var v = document.createElement('video');
+    v.classList.add('muted');
+    v.controls=true;
     if (r != null) {
         v.id = Object.keys(r)[0];
     }
@@ -52,19 +54,40 @@ function play(el, url) {
     var video = el;
     if(Hls.isSupported()) {
         var hls = new Hls({
-            debug: true
+            //debug: true
+            enableWorker: true,
+            lowLatencyMode: true,
+            liveSyncDuration: 45,
+            liveMaxLatencyDuration: 90,
+            initialLiveManifestSize: 2,
         });
         hls.loadSource(url);
         hls.attachMedia(video);
         hls.on(Hls.Events.MEDIA_ATTACHED, function() {
             video.muted = true;
             video.play();
-            try {
-                if (views.length > 1) {
-                    video.muted = false;
-                    video.play();
+        });
+        hls.on(Hls.Events.ERROR, function (event, data) {
+            if (data.fatal) {
+                switch (data.type) {
+                case Hls.ErrorTypes.MEDIA_ERROR:
+                    console.log('fatal media error encountered, try to recover');
+                    hls.recoverMediaError();
+                    break;
+                case Hls.ErrorTypes.NETWORK_ERROR:
+                    console.error('fatal network error encountered', data);
+                    // All retries and media options have been exhausted.
+                    // Immediately trying to restart loading could cause loop loading.
+                    // Consider modifying loading policies to best fit your asset and network
+                    // conditions (manifestLoadPolicy, playlistLoadPolicy, fragLoadPolicy).
+                    break;
+                default:
+                    // cannot recover
+                    hls.destroy();
+                    location.reload();
+                    break;
                 }
-            } catch (e) {console.warn(e);}
+            }
         });
     }
     else if (video.canPlayType('application/vnd.apple.mpegurl')) {
