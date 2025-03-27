@@ -188,7 +188,7 @@ def build_channels():
             if cid and name:
                 channels.append({"id": cid, "name": name})
 
-        for item in set(s.select('ol li')) | set(s.select('div.grid-item')) | set(s.select('.grid-items .element')) | set(s.select('.btn.btn-lg')):
+        for item in set(s.select('ol li')) | set(s.select('ul li')) | set(s.select('div.grid-item')) | set(s.select('.grid-items .element')) | set(s.select('.btn.btn-lg')):
             print('channels_json li item', item)
             link = item.select('a')
             parse_link(link)
