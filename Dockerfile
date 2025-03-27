@@ -16,4 +16,4 @@ EXPOSE 5000
 ENV FIREFOX_BINARY=/opt/firefox/firefox
 
 ENTRYPOINT ["bash"]
-CMD ["-c", "FIREFOX_BINARY=/opt/firefox/firefox python3 -m flask run --host 0.0.0.0 --with-threads --no-debug"]
+CMD ["-c", "FIREFOX_BINARY=/opt/firefox/firefox python3 -m flask run --host 0.0.0.0 --with-threads --no-debugger"]
